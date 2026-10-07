@@ -1,0 +1,85 @@
+﻿@model ControlAsistencia.Models.Employee
+@{
+    ViewData["Title"] = "Carné de " + Model.FullName;
+}
+
+<style>
+    .badge-card {
+        width: 320px;
+        height: 480px;
+        border: 2px solid #0d6efd;
+        border-radius: 16px;
+        margin: 0 auto;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        background: #ffffff;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        overflow: hidden;
+    }
+
+    .badge-header {
+        background: #0d6efd;
+        color: white;
+        padding: 15px;
+    }
+
+    @@media print {
+        .no-print {
+            display: none !important;
+        }
+
+        body {
+            background: white !important;
+        }
+
+        .badge-card {
+            box-shadow: none !important;
+            border: 2px solid #333 !important;
+        }
+    }
+</style>
+
+<div class="container py-4 text-center">
+    <div class="mb-4 no-print d-flex justify-content-center gap-2">
+        <a asp-action="Index" class="btn btn-outline-secondary">⬅ Volver a Empleados</a>
+        <button onclick="window.print()" class="btn btn-primary fw-bold">🖨 Imprimir Carné</button>
+    </div>
+
+    <!-- EL CARNÉ FÍSICO -->
+    <div class="badge-card text-center">
+        <div class="badge-header">
+            <h5 class="fw-bold mb-0">CONTROL DE ASISTENCIA</h5>
+            <small class="opacity-75">Credencial Oficial</small>
+        </div>
+
+        <div class="p-3">
+            <h4 class="fw-bold text-dark mb-1">@Model.FullName</h4>
+            <span class="badge bg-secondary mb-3">ID: @Model.CardCode</span>
+
+            <!-- Código QR generado en vivo -->
+            <div id="qrcode" class="d-flex justify-content-center my-2"></div>
+
+            <small class="text-muted d-block mt-2">Acerque este código a la tablet para registrar su turno o pausas.</small>
+        </div>
+
+        <div class="bg-light py-2 border-top">
+            <small class="text-secondary fw-semibold">EMPRESA S.A.</small>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+    <!-- Librería ligera de QR en JavaScript sin dependencias pesadas -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script>
+        new QRCode(document.getElementById("qrcode"), {
+            text: "@Model.CardCode",
+            width: 140,
+            height: 140,
+            colorDark : "#000000",
+            colorLight : "#ffffff",
+            correctLevel : QRCode.CorrectLevel.H
+        });
+    </script>
+}

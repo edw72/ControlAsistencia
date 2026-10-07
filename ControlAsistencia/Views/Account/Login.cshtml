@@ -1,0 +1,41 @@
+﻿@{
+    ViewData["Title"] = "Acceso Administrativo";
+}
+
+<div class="container py-5" style="max-width: 420px;">
+    <div class="card border-0 shadow-lg rounded-4 p-4">
+        <div class="text-center mb-4">
+            <h3 class="fw-bold text-primary">Acceso Supervisor</h3>
+            <p class="text-muted small">Ingrese para gestionar asistencia, reportes y ajustes</p>
+        </div>
+
+        @if (ViewBag.Error != null)
+        {
+            <div class="alert alert-danger rounded-3 py-2 small mb-3">
+                ⚠️ @ViewBag.Error
+            </div>
+        }
+
+        <form asp-action="Login" method="post">
+            <input type="hidden" name="returnUrl" value="@ViewBag.ReturnUrl" />
+
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Usuario</label>
+                <input type="text" name="username" class="form-control form-control-lg" placeholder="admin" autofocus required />
+            </div>
+
+            <div class="mb-4">
+                <label class="form-label fw-semibold">Contraseña</label>
+                <input type="password" name="password" class="form-control form-control-lg" placeholder="••••••••" required />
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold mb-3">
+                Ingresar al Sistema
+            </button>
+
+            <div class="text-center">
+                <a href="/Kiosk" class="text-decoration-none small text-muted">⬅ Volver a pantalla de Kiosco</a>
+            </div>
+        </form>
+    </div>
+</div>

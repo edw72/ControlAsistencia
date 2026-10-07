@@ -1,0 +1,244 @@
+﻿@model ControlAsistencia.Models.DashboardViewModel
+@{
+    ViewData["Title"] = "Panel de Control - Asistencia";
+}
+
+<div class="container-fluid py-4">
+    <!-- Encabezado -->
+    <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 pb-3 border-bottom gap-3">
+        <div>
+            <h2 class="h3 fw-bold mb-0">Control de Asistencia y Tiempos</h2>
+            <span class="text-muted">Políticas: Café <strong>15m</strong> | Almuerzo <strong>45m</strong> | Diligencias <strong>(100% no remunerado)</strong></span>
+        </div>
+        <div class="d-flex align-items-center gap-2">
+            <form method="get" class="d-flex gap-2">
+                <input type="date" name="date" class="form-control"
+                       value="@Model.SelectedDate.ToString("yyyy-MM-dd")" onchange="this.form.submit()" />
+            </form>
+            <a href="/Kiosk" target="_blank" class="btn btn-outline-primary fw-semibold">🖥 Kiosco</a>
+            <button class="btn btn-primary" onclick="location.reload();">🔄 Actualizar</button>
+        </div>
+    </div>
+
+    <!-- KPIs Superiores -->
+    <div class="row g-3 mb-4">
+        <div class="col-6 col-md">
+            <div class="card border-0 shadow-sm rounded-4 border-start border-success border-4 p-3">
+                <span class="text-muted fw-semibold small">🟢 LABORANDO</span>
+                <h3 class="fw-bold mt-1 mb-0 text-success">@Model.WorkingCount</h3>
+            </div>
+        </div>
+        <div class="col-6 col-md">
+            <div class="card border-0 shadow-sm rounded-4 border-start border-warning border-4 p-3">
+                <span class="text-muted fw-semibold small">☕ EN CAFÉ</span>
+                <h3 class="fw-bold mt-1 mb-0 text-warning">@Model.CoffeeCount</h3>
+            </div>
+        </div>
+        <div class="col-6 col-md">
+            <div class="card border-0 shadow-sm rounded-4 border-start border-info border-4 p-3">
+                <span class="text-muted fw-semibold small">🍲 EN ALMUERZO</span>
+                <h3 class="fw-bold mt-1 mb-0 text-info">@Model.LunchCount</h3>
+            </div>
+        </div>
+        <div class="col-6 col-md">
+            <div class="card border-0 shadow-sm rounded-4 border-start border-dark border-4 p-3">
+                <span class="text-muted fw-semibold small">🚶 EN DILIGENCIA</span>
+                <h3 class="fw-bold mt-1 mb-0 text-dark">@Model.PersonalCount</h3>
+            </div>
+        </div>
+        <div class="col-6 col-md">
+            <div class="card border-0 shadow-sm rounded-4 border-start border-secondary border-4 p-3">
+                <span class="text-muted fw-semibold small">🔴 FUERA</span>
+                <h3 class="fw-bold mt-1 mb-0 text-secondary">@Model.OutCount</h3>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabla Tipográfica Limpia -->
+    <div class="card border-0 shadow-sm rounded-4 overflow-hidden">
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>Empleado</th>
+                        <th class="text-center">Estado</th>
+                        <th>Entrada</th>
+                        <th>Tardanza</th>
+                        <th>Salida</th>
+                        <th>Café (15m)</th>
+                        <th>Almuerzo (45m)</th>
+                        <th>Diligencias</th>
+                        <th>Total Descuento</th>
+                        <th>Horas Extras</th>
+                        <th>Efectivas</th>
+                        <th class="text-end">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var emp in Model.Employees)
+                    {
+                        <tr>
+                            <!-- Nombre y Código -->
+                            <td>
+                                <div class="fw-semibold">
+                                    @emp.FullName
+                                    @if (!string.IsNullOrEmpty(emp.TodayIncidentDetail))
+                                    {
+                                        <span class="badge bg-warning text-dark border ms-1" title="@emp.TodayIncidentCategory: @emp.TodayIncidentDetail">
+                                            📝 @emp.TodayIncidentCategory
+                                        </span>
+                                    }
+                                </div>
+                                <small class="text-muted">ID: @emp.CardCode</small>
+                            </td>
+
+                            <!-- ÚNICO LUGAR CON BADGE: Estado en tiempo real -->
+                            <td class="text-center">
+                                <span class="badge @emp.StatusBadgeClass px-3 py-2">
+                                    @emp.CurrentStatus
+                                </span>
+                            </td>
+
+                            <!-- Entrada -->
+                            <td>@emp.ClockInTime</td>
+
+                            <!-- Tardanza: Solo texto en rojo si hay tardanza -->
+                            <td>
+                                @if (emp.LateMinutes > 0)
+                                {
+                                    <span class="text-danger fw-bold">+@emp.LateMinutes m</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">0m</span>
+                                }
+                            </td>
+
+                            <!-- Salida -->
+                            <td>@emp.ClockOutTime</td>
+
+                            <!-- Café: Texto normal y el exceso en rojo -->
+                            <td>
+                                <span>@emp.CoffeeMinutes min</span>
+                                @if (emp.ExcessCoffeeMinutes > 0)
+                                {
+                                    <span class="text-danger fw-bold ms-1">(+@emp.ExcessCoffeeMinutes m)</span>
+                                }
+                            </td>
+
+                            <!-- Almuerzo: Texto normal y el exceso en rojo -->
+                            <td>
+                                <span>@emp.LunchMinutes min</span>
+                                @if (emp.ExcessLunchMinutes > 0)
+                                {
+                                    <span class="text-danger fw-bold ms-1">(+@emp.ExcessLunchMinutes m)</span>
+                                }
+                            </td>
+
+                            <!-- Diligencias (100% descuento): Texto en rojo si salió -->
+                            <td>
+                                @if (emp.PersonalErrandMinutes > 0)
+                                {
+                                    <span class="text-danger fw-bold">@emp.PersonalErrandMinutes min</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">0m</span>
+                                }
+                            </td>
+
+                            <!-- Total Descuento del día: Texto rojo destacado -->
+                            <td>
+                                @if (emp.TotalExcessMinutes > 0)
+                                {
+                                    <span class="text-danger fw-bold fs-6">-@emp.TotalExcessMinutes min</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">0 min</span>
+                                }
+                            </td>
+
+                            <!-- Horas Extras: Solo texto en verde -->
+                            <td>
+                                @if (emp.OvertimeMinutes > 0)
+                                {
+                                    <span class="text-success fw-bold">+@emp.FormattedOvertime</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">0m</span>
+                                }
+                            </td>
+
+                            <!-- Horas Efectivas trabajadas -->
+                            <td class="fw-bold">@emp.NetWorkingHours</td>
+
+                            <!-- Acciones -->
+                            <td class="text-end">
+                                <div class="btn-group">
+                                    <button type="button" class="btn btn-sm btn-outline-info"
+                                            data-bs-toggle="modal" data-bs-target="#modalNovedad-@emp.EmployeeId" title="Registrar llamada o aviso">
+                                        💬 Novedad
+                                    </button>
+                                    <a asp-controller="Adjustments" asp-action="Index"
+                                       asp-route-employeeId="@emp.EmployeeId"
+                                       asp-route-date="@Model.SelectedDate.ToString("yyyy-MM-dd")"
+                                       class="btn btn-sm btn-outline-primary" title="Ajustar marcas">
+                                        🛠 Ajustar
+                                    </a>
+                                    <a asp-action="BiweeklyReport" asp-route-employeeId="@emp.EmployeeId"
+                                       class="btn btn-sm btn-outline-dark">
+                                        📑 Quincena
+                                    </a>
+                                </div>
+
+                                <!-- MODAL RÁPIDO PARA ANOTAR LA LLAMADA -->
+                                <div class="modal fade text-start" id="modalNovedad-@emp.EmployeeId" tabindex="-1">
+                                    <div class="modal-dialog modal-dialog-centered">
+                                        <div class="modal-content rounded-4 border-0 shadow">
+                                            <form asp-controller="Incidents" asp-action="CreateQuick" method="post">
+                                                <div class="modal-header border-0 pb-0">
+                                                    <h5 class="modal-title fw-bold">Registrar Novedad: @emp.FullName</h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    <input type="hidden" name="employeeId" value="@emp.EmployeeId" />
+                                                    <input type="hidden" name="date" value="@Model.SelectedDate.ToString("yyyy-MM-dd")" />
+                                                    <input type="hidden" name="returnUrl" value="/Dashboard?date=@Model.SelectedDate.ToString("yyyy-MM-dd")" />
+
+                                                    <div class="mb-3">
+                                                        <label class="form-label fw-semibold">Tipo de Novedad</label>
+                                                        <select name="category" class="form-select">
+                                                            <option value="Llegada Tardía Avisada">Llegada Tardía Avisada</option>
+                                                            <option value="Problema de Transporte / Uber">Problema de Transporte / Uber</option>
+                                                            <option value="Cita Médica">Cita Médica</option>
+                                                            <option value="Permiso Personal / Trámite">Permiso Personal / Trámite</option>
+                                                            <option value="Emergencia Familiar">Emergencia Familiar</option>
+                                                            <option value="Otro">Otro</option>
+                                                        </select>
+                                                    </div>
+
+                                                    <div class="mb-3">
+                                                        <label class="form-label fw-semibold">Detalle de la Llamada / Situación</label>
+                                                        <textarea name="detail" class="form-control" rows="3"
+                                                              placeholder="Ej: Llamó a las 7:45 AM avisando demora por situación con Uber en casa. Autorizado a llegar tarde." required></textarea>
+                                                        <small class="text-muted">Quedará registrado con tu usuario y la hora exacta de este momento.</small>
+                                                    </div>
+                                                </div>
+                                                <div class="modal-footer border-0">
+                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                                                    <button type="submit" class="btn btn-primary fw-bold">💾 Guardar en Bitácora</button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>

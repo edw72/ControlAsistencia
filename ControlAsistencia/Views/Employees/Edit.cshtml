@@ -1,0 +1,57 @@
+﻿@model ControlAsistencia.Models.Employee
+@{
+    ViewData["Title"] = "Editar Colaborador";
+}
+
+<div class="container py-4" style="max-width: 650px;">
+    <div class="card border-0 shadow-sm rounded-4 p-4">
+        <h3 class="fw-bold mb-1">Editar Datos del Empleado</h3>
+        <p class="text-muted mb-4">Modifique la información asignada al empleado</p>
+
+        <form asp-action="Edit" method="post">
+            <input type="hidden" asp-for="Id" />
+            <input type="hidden" asp-for="CreatedAt" />
+            <div asp-validation-summary="ModelOnly" class="text-danger mb-3"></div>
+
+            <div class="mb-3">
+                <label asp-for="FullName" class="form-label fw-semibold"></label>
+                <input asp-for="FullName" class="form-control form-control-lg" />
+                <span asp-validation-for="FullName" class="text-danger small"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="CardCode" class="form-label fw-semibold">Código Tarjeta RFID o QR</label>
+                <input asp-for="CardCode" class="form-control form-control-lg" />
+                <span asp-validation-for="CardCode" class="text-danger small"></span>
+            </div>
+
+            <div class="mb-3">
+                <label asp-for="Pin" class="form-label fw-semibold">PIN Numérico</label>
+                <input asp-for="Pin" class="form-control form-control-lg" placeholder="••••" />
+                <span asp-validation-for="Pin" class="text-danger small"></span>
+            </div>
+
+            <div class="form-check form-switch mb-4">
+                <input class="form-check-input" type="checkbox" asp-for="IsActive">
+                <label class="form-check-label fw-semibold" asp-for="IsActive">¿Empleado Activo para Marcar?</label>
+            </div>
+            <div class="form-check form-switch mb-3">
+                <input class="form-check-input" type="checkbox" asp-for="HasUnifiedLunch">
+                <label class="form-check-label fw-semibold" asp-for="HasUnifiedLunch">
+                    Pausa Unificada (60 min Almuerzo - Omite Café matutino)
+                </label>
+            </div>
+
+            <div class="d-flex justify-content-between">
+                <a asp-action="Index" class="btn btn-outline-secondary px-4">Cancelar</a>
+                <button type="submit" class="btn btn-primary px-4 fw-bold">Actualizar Datos</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+@section Scripts {
+    @{
+        await Html.RenderPartialAsync("_ValidationScriptsPartial");
+    }
+}

@@ -1,0 +1,74 @@
+﻿<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <title>@ViewData["Title"] - Reloj Checador</title>
+
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <style>
+        /* CONGELAR LA PANTALLA EN IPAD / SAFARI */
+        html, body {
+            height: 100%;
+            height: 100dvh; /* Altura dinámica exacta de pantalla */
+            width: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden !important; /* Cero scroll */
+            position: fixed !important; /* Fija la pantalla al cristal del iPad */
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            color: #f8fafc;
+            font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+            /* Anula el rebote elástico de Apple */
+            overscroll-behavior: none !important;
+            -webkit-overflow-scrolling: auto;
+            /* Evita selecciones y lupas accidentales */
+            -webkit-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
+        }
+
+        .kiosk-fullscreen-wrapper {
+            height: 100%;
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 1rem;
+            box-sizing: border-box;
+        }
+
+        .admin-corner-link {
+            position: fixed;
+            bottom: 12px;
+            right: 15px;
+            opacity: 0.35;
+            transition: opacity 0.2s;
+            font-size: 0.85rem;
+            color: #94a3b8;
+            text-decoration: none;
+            z-index: 9999;
+        }
+
+            .admin-corner-link:hover {
+                opacity: 0.9;
+                color: #ffffff;
+            }
+    </style>
+</head>
+<body>
+    <div class="kiosk-fullscreen-wrapper">
+        @RenderBody()
+    </div>
+
+    <a href="/Account/Login" class="admin-corner-link">🔒 Acceso Supervisor</a>
+
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

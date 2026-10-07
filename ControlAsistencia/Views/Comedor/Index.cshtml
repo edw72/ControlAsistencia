@@ -1,0 +1,286 @@
+﻿@{
+    Layout = null; // Pantalla limpia independiente para el monitor del comedor
+}
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Monitor de Comedor - Control de Tiempos</title>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <style>
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+            color: #f8fafc;
+            min-height: 100vh;
+            font-family: system-ui, -apple-system, sans-serif;
+            padding: 2rem;
+        }
+
+        .monitor-header {
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            padding-bottom: 1.5rem;
+            margin-bottom: 2rem;
+        }
+
+        .digital-clock {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 2.5rem;
+            font-weight: 800;
+            color: #38bdf8;
+            letter-spacing: 2px;
+        }
+
+        .break-card {
+            background: rgba(30, 41, 59, 0.7);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 20px;
+            padding: 1.5rem;
+            transition: all 0.3s ease;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+        }
+        /* Alerta visual cuando faltan 5 minutos o menos */
+        .break-card-warning {
+            border: 2px solid #f59e0b !important;
+            background: rgba(245, 158, 11, 0.15) !important;
+            animation: pulse-border 2s infinite;
+        }
+        /* Alerta visual si ya se excedió */
+        .break-card-danger {
+            border: 2px solid #ef4444 !important;
+            background: rgba(239, 68, 68, 0.2) !important;
+        }
+
+        @@keyframes pulse-border {
+            0% {
+                box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.4);
+            }
+
+            70% {
+                box-shadow: 0 0 0 15px rgba(245, 158, 11, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+            }
+        }
+
+        .timer-display {
+            font-size: 2.8rem;
+            font-weight: 800;
+            font-family: 'Courier New', monospace;
+        }
+    </style>
+</head>
+<body>
+    <div class="container-fluid">
+        <!-- Encabezado con Logo y Reloj -->
+        <div class="d-flex justify-content-between align-items-center monitor-header flex-wrap gap-3">
+            <div class="d-flex align-items-center gap-3">
+                <img src="~/images/logo.png" alt="Logo" style="height: 60px; object-fit: contain;" />
+                <div>
+                    <h2 class="fw-bold mb-0">MONITOR DE COMEDOR Y PAUSAS</h2>
+                    <span class="text-light opacity-75">Control automático de tiempos con avisos sonoros</span>
+                </div>
+            </div>
+            <div class="text-end d-flex align-items-center gap-3">
+                <!-- Botón para activar audio si el navegador lo tiene bloqueado -->
+                <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-2 small">
+                    🔊 Audio Automático Activo
+                </span>
+                <div id="liveClock" class="digital-clock">00:00:00</div>
+            </div>
+        </div>
+
+        <!-- Mensaje cuando el comedor está vacío -->
+        <div id="emptyState" class="text-center py-5 d-none">
+            <div style="font-size: 4rem;">☕ 🍽️</div>
+            <h3 class="fw-bold text-light opacity-75 mt-3">No hay colaboradores en descanso en este momento</h3>
+            <p class="text-muted">El personal se encuentra en sus puestos de trabajo</p>
+        </div>
+
+        <!-- Cuadrícula de tarjetas de personas en descanso -->
+        <div id="cardsGrid" class="row g-4"></div>
+    </div>
+
+    <script>
+        // 1. RELOJ EN VIVO
+        function updateLiveClock() {
+            document.getElementById('liveClock').textContent = new Date().toLocaleTimeString();
+        }
+        setInterval(updateLiveClock, 1000);
+        updateLiveClock();
+
+        // 2. MOTOR DE SONIDO (Ding-Dong Aeropuerto)
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+
+        function getAudioContext() {
+            if (!audioCtx) audioCtx = new AudioContext();
+            if (audioCtx.state === 'suspended') {
+                audioCtx.resume().catch(() => {});
+            }
+            return audioCtx;
+        }
+
+        function playTone(freq, duration, delay, gainLevel) {
+            setTimeout(() => {
+                try {
+                    const ctx = getAudioContext();
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+                    gain.gain.setValueAtTime(gainLevel, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start();
+                    osc.stop(ctx.currentTime + duration);
+                } catch (e) { }
+            }, delay);
+        }
+
+        function playAirportChime(callback) {
+            playTone(698.46, 0.5, 0, 0.35); // Ding
+            playTone(523.25, 0.8, 280, 0.4); // Dong
+        }
+
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            getAudioContext();
+            document.addEventListener('click', () => { getAudioContext(); }, { once: true });
+        });
+
+        // 4. GESTIÓN DE TIEMPOS, ORDENAMIENTO POR RELEVANCIA Y ANUNCIOS
+        let activeBreaks = [];
+        const alertedEmployees = new Set();
+
+        async function fetchBreaks() {
+            try {
+                const response = await fetch('/Comedor/GetActiveBreaks');
+                activeBreaks = await response.json();
+                renderCards();
+            } catch (err) {
+                console.error("Error al obtener descansos", err);
+            }
+        }
+
+        function renderCards() {
+            const grid = document.getElementById('cardsGrid');
+            const emptyState = document.getElementById('emptyState');
+
+            if (activeBreaks.length === 0) {
+                grid.innerHTML = '';
+                emptyState.classList.remove('d-none');
+                return;
+            }
+
+            emptyState.classList.add('d-none');
+
+            // AJUSTE 3: ORDENAR POR RELEVANCIA / URGENCIA
+            // Los que tienen menos tiempo restante (o los que ya se pasaron) van PRIMERO arriba
+            activeBreaks.sort((a, b) => {
+                const remA = (a.allowedMinutes * 60) - a.elapsedSeconds;
+                const remB = (b.allowedMinutes * 60) - b.elapsedSeconds;
+                return remA - remB; // Menor tiempo restante va arriba
+            });
+
+            let html = '';
+
+            activeBreaks.forEach(b => {
+                const totalAllowedSeconds = b.allowedMinutes * 60;
+                const remainingSeconds = totalAllowedSeconds - b.elapsedSeconds;
+
+                const absSeconds = Math.abs(remainingSeconds);
+                const mins = Math.floor(absSeconds / 60);
+                const secs = absSeconds % 60;
+                const timeFormatted = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+                let cardClass = 'break-card';
+                let timerColor = 'text-info';
+                let statusLabel = 'Tiempo Restante';
+
+                // Alerta de 5 minutos o menos
+                if (remainingSeconds <= 300 && remainingSeconds > 0) {
+                    cardClass += ' break-card-warning';
+                    timerColor = 'text-warning';
+                    statusLabel = '⚠️ ¡Últimos 5 minutos!';
+
+                    const alertKey = `${b.employeeId}-${b.breakType}`;
+                    if (!alertedEmployees.has(alertKey)) {
+                        alertedEmployees.add(alertKey);
+                        playAirportChime(); // <-- Solo suena el ding-dong suave y discreto
+                    }
+                }
+                // Tiempo excedido
+                else if (remainingSeconds <= 0) {
+                    cardClass += ' break-card-danger';
+                    timerColor = 'text-danger';
+                    statusLabel = '🚨 Tiempo Excedido';
+                }
+
+                const percent = Math.min(100, Math.floor((b.elapsedSeconds / totalAllowedSeconds) * 100));
+
+                html += `
+                    <div class="col-md-6 col-lg-4">
+                        <div class="${cardClass}">
+                            <div class="d-flex justify-content-between align-items-center mb-2">
+                                <span class="badge ${b.breakType === 'Café' ? 'bg-warning text-dark' : 'bg-primary'} px-3 py-2 fs-6">
+                                    ${b.breakType === 'Café' ? '☕ Café' : '🍲 Almuerzo'} (${b.allowedMinutes}m)
+                                </span>
+                                <small class="text-muted fw-bold">Inició: ${b.startTimeLocal}</small>
+                            </div>
+
+                            <h3 class="fw-bold mb-3 text-truncate">${b.fullName}</h3>
+
+                            <div class="text-center my-3">
+                                <small class="${timerColor} fw-bold d-block text-uppercase">${statusLabel}</small>
+                                <div class="timer-display ${timerColor}">
+                                    ${remainingSeconds < 0 ? '-' : ''}${timeFormatted}
+                                </div>
+                            </div>
+
+                            <div class="progress bg-dark" style="height: 8px;">
+                                <div class="progress-bar ${remainingSeconds <= 300 ? (remainingSeconds <= 0 ? 'bg-danger' : 'bg-warning') : 'bg-info'}"
+                                     style="width: ${percent}%;"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+
+                b.elapsedSeconds++;
+            });
+
+            grid.innerHTML = html;
+
+            // Limpieza de claves de alertas
+            const currentKeys = new Set(activeBreaks.map(b => `${b.employeeId}-${b.breakType}`));
+            for (const key of alertedEmployees) {
+                if (!currentKeys.has(key)) {
+                    alertedEmployees.delete(key);
+                }
+            }
+        }
+
+        // Pantalla Completa con el control remoto del TV
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter' || e.code === 'Enter' || e.key === 'Select') {
+                const elem = document.documentElement;
+                if (!document.fullscreenElement) {
+                    if (elem.requestFullscreen) elem.requestFullscreen();
+                    else if (elem.webkitRequestFullscreen) elem.webkitRequestFullscreen();
+                } else {
+                    if (document.exitFullscreen) document.exitFullscreen();
+                }
+            }
+        });
+
+        setInterval(fetchBreaks, 3000);
+        setInterval(renderCards, 1000);
+        fetchBreaks();
+    </script>
+</body>
+</html>

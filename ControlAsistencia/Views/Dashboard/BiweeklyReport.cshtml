@@ -1,0 +1,216 @@
+﻿@model ControlAsistencia.Models.BiweeklyReportViewModel
+@{
+    ViewData["Title"] = "Liquidación de Asistencia - " + Model.FullName;
+}
+
+<style>
+    @@media print {
+        .no-print {
+            display: none !important;
+        }
+
+        body {
+            background: #fff;
+            font-size: 10pt;
+        }
+
+        .card {
+            border: none !important;
+            box-shadow: none !important;
+        }
+    }
+</style>
+
+<div class="container py-4">
+    <!-- Barra de Filtros -->
+    <div class="d-flex justify-content-between align-items-center mb-4 no-print gap-3 flex-wrap">
+        <a asp-action="Index" class="btn btn-outline-secondary">⬅ Volver al Panel</a>
+
+        <form method="get" class="d-flex align-items-center gap-2">
+            <input type="hidden" name="employeeId" value="@Model.EmployeeId" />
+            <select name="quincena" class="form-select form-select-sm">
+                <option value="1" selected="@(ViewBag.SelectedQuincena == 1)">1ra Quincena (1 al 15)</option>
+                <option value="2" selected="@(ViewBag.SelectedQuincena == 2)">2da Quincena (16 al fin de mes)</option>
+            </select>
+            <select name="month" class="form-select form-select-sm">
+                @for (int m = 1; m <= 12; m++)
+                {
+                    <option value="@m" selected="@(ViewBag.SelectedMonth == m)">
+                        @System.Globalization.CultureInfo.CurrentCulture.DateTimeFormat.GetMonthName(m).ToUpper()
+                    </option>
+                }
+            </select>
+            <button type="submit" class="btn btn-sm btn-primary">Filtrar</button>
+        </form>
+
+        <div class="d-flex gap-2">
+            <a asp-action="ExportBiweeklyToExcel"
+               asp-route-employeeId="@Model.EmployeeId"
+               asp-route-year="@ViewBag.SelectedYear"
+               asp-route-month="@ViewBag.SelectedMonth"
+               asp-route-quincena="@ViewBag.SelectedQuincena"
+               class="btn btn-success fw-bold">
+                📗 Descargar Excel (.xlsx)
+            </a>
+            <button onclick="window.print()" class="btn btn-outline-secondary fw-bold">
+                🖨 Imprimir
+            </button>
+        </div>
+    </div>
+
+    <!-- DOCUMENTO FORMAL -->
+    <div class="card p-4 border shadow-sm rounded-4">
+        <div class="row border-bottom pb-3 mb-3 align-items-center">
+            <div class="col-2 text-start">
+                <img src="~/images/logoclaro.png" alt="Logo" style="height: 65px; object-fit: contain;" />
+            </div>
+            <div class="col-5">
+                <h4 class="fw-bold mb-1">LIQUIDACIÓN DE ASISTENCIA</h4>
+                <h6 class="text-secondary mb-1">@Model.PeriodTitle</h6>
+                <p class="mb-0 text-muted small">Políticas: Café (15m) | Almuerzo (45m) | Diligencias (100%)</p>
+            </div>
+            <div class="col-5 text-end">
+                <h4 class="fw-bold text-primary mb-1">@Model.FullName</h4>
+                <p class="text-muted mb-0">ID / Carné: <strong>@Model.CardCode</strong></p>
+                <small class="text-muted">@Model.StartDate.ToString("dd/MM/yyyy") al @Model.EndDate.ToString("dd/MM/yyyy")</small>
+            </div>
+        </div>
+
+        <!-- Tabla Limpia Sin Badges -->
+        <table class="table table-bordered align-middle mb-4">
+            <thead class="table-light">
+                <tr class="text-center">
+                    <th>Fecha</th>
+                    <th>Entrada</th>
+                    <th>Tardanza</th>
+                    <th>Salida</th>
+                    <th>Café Real</th>
+                    <th>Almuerzo Real</th>
+                    <th>Diligencias</th>
+                    <th>Total Descuento</th>
+                    <th>Horas Extras</th>
+                    <th>Efectivas</th>
+                </tr>
+            </thead>
+            <tbody>
+                @if (!Model.Days.Any())
+                {
+                    <tr>
+                        <td colspan="10" class="text-center text-muted py-4">No se registran marcas en este periodo.</td>
+                    </tr>
+                }
+                else
+                {
+                    @foreach (var d in Model.Days)
+                    {
+                        <tr class="text-center">
+                            <td class="fw-bold text-start ps-3">@d.Date.ToString("ddd dd/MM/yyyy")</td>
+                            <td>@d.ClockIn</td>
+
+                            <!-- Tardanza: Solo texto rojo -->
+                            <td>
+                                @if (d.LateMinutes > 0)
+                                {
+                                    <span class="text-danger fw-bold">+@d.LateMinutes m</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">0m</span>
+                                }
+                            </td>
+
+                            <td>@d.ClockOut</td>
+
+                            <!-- Café -->
+                            <td>
+                                <span>@d.CoffeeMinutes m</span>
+                                @if (d.CoffeeMinutes > 15)
+                                {
+                                    <span class="text-danger fw-bold ms-1">(+@(d.CoffeeMinutes - 15)m)</span>
+                                }
+                            </td>
+
+                            <!-- Almuerzo -->
+                            <td>
+                                <span>@d.LunchMinutes m</span>
+                                @if (d.LunchMinutes > 45)
+                                {
+                                    <span class="text-danger fw-bold ms-1">(+@(d.LunchMinutes - 45)m)</span>
+                                }
+                            </td>
+
+                            <!-- Diligencias: Texto rojo -->
+                            <td>
+                                @if (d.PersonalErrandMinutes > 0)
+                                {
+                                    <span class="text-danger fw-bold">@d.PersonalErrandMinutes m</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">0m</span>
+                                }
+                            </td>
+
+                            <!-- Total Descuento del Día: Texto rojo -->
+                            <td>
+                                @if (d.ExcessMinutes > 0)
+                                {
+                                    <span class="text-danger fw-bold">-@d.ExcessMinutes min</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">0m</span>
+                                }
+                            </td>
+
+                            <!-- Horas Extras: Solo texto verde -->
+                            <td>
+                                @if (d.OvertimeMinutes > 0)
+                                {
+                                    <span class="text-success fw-bold">+@((d.OvertimeMinutes / 60))h @((d.OvertimeMinutes % 60))m</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">0m</span>
+                                }
+                            </td>
+
+                            <td class="fw-semibold">@d.EffectiveHours</td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+
+        <!-- Resumen Financiero Tipográfico -->
+        <div class="row g-3 bg-light p-3 rounded-3 mb-4 border">
+            <div class="col-md-6 border-end">
+                <span class="text-muted small fw-bold">DESGLOSE DE DEDUCCIONES APLICADAS:</span>
+                <ul class="list-unstyled mb-2 mt-1 small">
+                    <li>⏱ Tardanzas de entrada: <span class="text-danger fw-bold">@Model.TotalLateMinutes min</span></li>
+                    <li>☕ Exceso café (>15 min): <span class="text-danger fw-bold">@Model.TotalExcessCoffeeMinutes min</span></li>
+                    <li>🍲 Exceso almuerzo (>45 min): <span class="text-danger fw-bold">@Model.TotalExcessLunchMinutes min</span></li>
+                    <li>🚶 Diligencias personales (100%): <span class="text-danger fw-bold">@Model.TotalPersonalErrandMinutes min</span></li>
+                </ul>
+                <h5 class="fw-bold text-danger mb-0">TOTAL A DEDUCIR: @Model.FormattedTotalExcess</h5>
+            </div>
+            <div class="col-md-6 ps-md-4">
+                <span class="text-muted small fw-bold">RESUMEN DE TIEMPO EXTRA LABORADO:</span>
+                <p class="mb-1 text-muted small">Ingresos anticipados fuera de cortesía + Tiempo posterior al turno</p>
+                <h5 class="fw-bold text-success mb-0 mt-3">TOTAL HORAS EXTRAS: @Model.FormattedTotalOvertime</h5>
+            </div>
+        </div>
+
+        <!-- Firmas -->
+        <div class="row mt-5 pt-4 text-center">
+            <div class="col-6">
+                <div class="border-top border-dark mx-auto" style="width: 70%;"></div>
+                <p class="mt-2 fw-semibold mb-0">Recursos Humanos / Nómina</p>
+            </div>
+            <div class="col-6">
+                <div class="border-top border-dark mx-auto" style="width: 70%;"></div>
+                <p class="mt-2 fw-semibold mb-0">Firma del Colaborador</p>
+            </div>
+        </div>
+    </div>
+</div>

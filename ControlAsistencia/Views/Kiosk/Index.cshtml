@@ -1,0 +1,417 @@
+﻿@{
+    Layout = "_KioskLayout";
+    ViewData["Title"] = "Reloj Checador";
+}
+
+<style>
+    .kiosk-box {
+        width: 100%;
+        max-width: 540px;
+    }
+    .digital-clock {
+        font-family: 'Courier New', Courier, monospace;
+        font-size: 3.5rem;
+        font-weight: 800;
+        letter-spacing: 3px;
+        color: #38bdf8;
+        text-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
+    }
+    .kiosk-card {
+        background: #ffffff;
+        color: #1e293b;
+        border-radius: 24px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.35);
+    }
+
+    .numpad-btn {
+        height: 94px; /* <-- Antes 68px, ahora mucho más alto para dedotes */
+        font-size: 1.85rem; /* <-- Números más grandes y legibles */
+        font-weight: 700;
+        border-radius: 16px;
+        transition: transform 0.08s ease;
+        touch-action: none !important;
+        -webkit-tap-highlight-color: transparent !important;
+    }
+    .numpad-btn:active {
+        transform: scale(0.94);
+    }
+    .action-btn {
+        height: 75px;
+        font-size: 1.25rem;
+        font-weight: 700;
+        border-radius: 16px;
+        transition: transform 0.08s ease;
+        touch-action: none !important;
+        -webkit-tap-highlight-color: transparent !important;
+    }
+    .action-btn:active {
+        transform: scale(0.96);
+    }
+
+</style>
+
+<div class="kiosk-box text-center">
+    <!-- BOTÓN PANTALLA COMPLETA -->
+    <div class="mb-3 text-center" id="fullscreenBanner">
+        <button type="button" class="btn btn-outline-info rounded-pill px-4 py-2 shadow-sm fw-bold" onclick="toggleKioskFullscreen()">
+            ⛶ Activar Pantalla Completa (Ocultar Navegador)
+        </button>
+    </div>
+
+    <!-- LOGO DE LA EMPRESA -->
+    <div class="mb-3">
+        <img src="~/images/logo.png" alt="Logo Empresa" 
+             style="height: 180px; object-fit: contain; filter: drop-shadow(0 4px 12px rgba(255, 255, 255, 0.15));" />
+    </div>
+
+    <!-- RELOJ DIGITAL EN VIVO -->
+    <div class="mb-4">
+        <div id="liveTime" class="digital-clock">00:00:00</div>
+        <div id="liveDate" class="text-light opacity-75 fs-5 mt-1">Cargando fecha...</div>
+    </div>
+
+    <!-- ESTADO 1: ENTRADA DE CÓDIGO (PIN / RFID / QR) -->
+    <div id="panelInput" class="card kiosk-card border-0 p-4">
+        @* <h4 class="fw-bold text-secondary mb-3">Acerque su carné o ingrese su PIN</h4> *@
+        
+        <form id="codeForm" onsubmit="event.preventDefault(); identifyEmployee();">
+            <div class="input-group input-group-lg mb-3">
+                <input type="password" id="inputCode" class="form-control text-center fs-2 fw-bold" 
+                       placeholder="Digite su pin" autofocus autocomplete="off" inputmode="none" />
+                <button class="btn btn-primary px-4 fs-5 fw-bold" type="submit">OK</button>
+            </div>
+        </form>
+
+        <!-- Teclado Numérico -->
+        <div class="row g-2">
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('1')">1</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('2')">2</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('3')">3</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('4')">4</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('5')">5</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('6')">6</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('7')">7</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('8')">8</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('9')">9</button></div>
+            <div class="col-4"><button type="button" class="btn btn-outline-danger w-100 numpad-btn" onclick="clearInput()">C</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('0')">0</button></div>
+            <div class="col-4"><button type="button" class="btn btn-success w-100 numpad-btn" onclick="identifyEmployee()">✔</button></div>
+        </div>
+
+        <!-- Mensaje de Error (Auto-desaparece) -->
+        <div id="errorMessage" class="alert alert-danger mt-3 d-none fw-semibold"></div>
+    </div>
+
+    <!-- ESTADO 2: SELECCIÓN DE ACCIÓN -->
+    <div id="panelActions" class="card kiosk-card border-0 p-4 d-none">
+        <h3 id="employeeName" class="text-primary fw-bold mb-1">Nombre Empleado</h3>
+        <p id="lastStatusText" class="text-muted mb-4 small">Última marca: Ninguna</p>
+
+        <div id="actionsContainer" class="d-grid gap-3"></div>
+
+        <div class="mt-4">
+            <button type="button" class="btn btn-outline-secondary px-4 rounded-pill" onclick="resetToIdle()">
+                Cancelar (<span id="countdown">10</span>s)
+            </button>
+        </div>
+    </div>
+
+    <!-- ESTADO 3: CONFIRMACIÓN Y ALERTA -->
+    <div id="panelSuccess" class="alert alert-success rounded-4 p-4 shadow-lg d-none mt-3">
+        <h2 class="alert-heading fs-1 mb-2">✔</h2>
+        <h3 id="successMessage" class="fw-bold mb-0">¡Marca registrada!</h3>
+
+        <div id="warningAlert" class="alert alert-danger border-2 border-danger rounded-3 fs-5 fw-bold mt-3 mb-0 d-none text-start shadow-sm">
+            <span id="warningText"></span>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+    // 1. RELOJ EN VIVO (Arranca de primero inmediatamente)
+    function updateClock() {
+        const now = new Date();
+        const timeElem = document.getElementById('liveTime');
+        const dateElem = document.getElementById('liveDate');
+        if (timeElem) timeElem.textContent = now.toLocaleTimeString();
+        if (dateElem) {
+            dateElem.textContent = now.toLocaleDateString(undefined, { 
+                weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' 
+            });
+        }
+    }
+    setInterval(updateClock, 1000);
+    updateClock();
+
+    // 2. PANTALLA COMPLETA
+    function toggleKioskFullscreen() {
+        const elem = document.documentElement;
+        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+            if (elem.requestFullscreen) {
+                elem.requestFullscreen();
+            } else if (elem.webkitRequestFullscreen) {
+                elem.webkitRequestFullscreen();
+            }
+            document.getElementById('fullscreenBanner').classList.add('d-none');
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen();
+            } else if (document.webkitExitFullscreen) {
+                document.webkitExitFullscreen();
+            }
+            document.getElementById('fullscreenBanner').classList.remove('d-none');
+        }
+    }
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+
+    function handleFullscreenChange() {
+        const banner = document.getElementById('fullscreenBanner');
+        if (!banner) return;
+        if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+            banner.classList.remove('d-none');
+        } else {
+            banner.classList.add('d-none');
+        }
+    }
+
+    // 3. MOTOR DE AUDIO (Web Audio API)
+    const AudioContext = window.AudioContext || window.webkitAudioContext;
+    let audioCtx = null;
+
+    function getAudioContext() {
+        if (!audioCtx) {
+            audioCtx = new AudioContext();
+        }
+        if (audioCtx.state === 'suspended') {
+            audioCtx.resume();
+        }
+        return audioCtx;
+    }
+
+    function playTone(freq, type, duration, delay = 0, gainLevel = 0.15) {
+        setTimeout(() => {
+            try {
+                const ctx = getAudioContext();
+                const osc = ctx.createOscillator();
+                const gain = ctx.createGain();
+
+                osc.type = type;
+                osc.frequency.value = freq;
+
+                gain.gain.setValueAtTime(gainLevel, ctx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+
+                osc.connect(gain);
+                gain.connect(ctx.destination);
+
+                osc.start();
+                osc.stop(ctx.currentTime + duration);
+            } catch (e) {
+                // Audio silenciado o no permitido por el navegador
+            }
+        }, delay);
+    }
+
+    function soundKeyClick() { playTone(950, 'sine', 0.04, 0, 0.05); }
+    function soundSuccess() {
+        playTone(523.25, 'sine', 0.18, 0, 0.18);
+        playTone(783.99, 'sine', 0.32, 110, 0.18);
+    }
+    function soundWarning() {
+        playTone(659.25, 'triangle', 0.22, 0, 0.25);
+        playTone(554.37, 'triangle', 0.35, 140, 0.25);
+    }
+    function soundError() {
+        playTone(220, 'sawtooth', 0.18, 0, 0.2);
+        playTone(180, 'sawtooth', 0.25, 110, 0.2);
+    }
+
+    // 4. CONTROL DEL TECLADO NUMÉRICO Y ERRORES
+    const input = document.getElementById('inputCode');
+    let errorTimer = null;
+
+    function pressNum(num) {
+        soundKeyClick();
+        showError(''); // Oculta error al tocar número
+        input.value += num;
+    }
+
+    function clearInput() {
+        soundKeyClick();
+        showError('');
+        input.value = '';
+    }
+
+    function showError(msg) {
+        clearTimeout(errorTimer);
+        const errorDiv = document.getElementById('errorMessage');
+        if (!errorDiv) return;
+
+        if (msg) {
+            errorDiv.textContent = msg;
+            errorDiv.classList.remove('d-none');
+            // Auto-ocultar a los 3.5 segundos
+            errorTimer = setTimeout(() => {
+                errorDiv.classList.add('d-none');
+            }, 3500);
+        } else {
+            errorDiv.classList.add('d-none');
+        }
+    }
+
+    let currentEmployeeId = 0;
+    let countdownTimer = null;
+
+    // 5. IDENTIFICAR EMPLEADO
+    async function identifyEmployee() {
+        const code = input.value.trim();
+        if (!code) return;
+
+        showError('');
+
+        try {
+            const response = await fetch('/Kiosk/Identify', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code: code })
+            });
+
+            const result = await response.json();
+
+            if (!result.success) {
+                soundError();
+                input.value = ''; // Limpia los puntos del PIN
+                showError(result.message); // Muestra el cartel rojo (se quedará 3.5 segundos)
+                return;
+            }
+
+            playTone(659.25, 'sine', 0.12, 0, 0.1);
+            renderEmployeeActions(result.data);
+        } catch (err) {
+            soundError();
+            input.value = '';
+            showError('Error de comunicación con el servidor');
+        }
+    }
+
+    function renderEmployeeActions(emp) {
+        currentEmployeeId = emp.employeeId;
+        document.getElementById('employeeName').textContent = emp.fullName;
+        
+        let lastInfo = emp.lastRecordType !== null 
+            ? `Último registro: ${emp.lastRecordTimeLocal}` 
+            : 'Sin registros previos';
+        document.getElementById('lastStatusText').textContent = lastInfo;
+
+        const container = document.getElementById('actionsContainer');
+        container.innerHTML = '';
+
+        const buttonConfig = {
+            1: { text: '🟢 Marcar Entrada (Clock In)', class: 'btn-success' },
+            2: { text: '☕ Salida a Café (Coffee Break)', class: 'btn-warning text-dark' },
+            3: { text: '☕ Regreso de Café', class: 'btn-primary' },
+            4: { text: '🍲 Salida a Almuerzo (Lunch)', class: 'btn-info text-dark' },
+            5: { text: '🍲 Regreso de Almuerzo', class: 'btn-primary' },
+            6: { text: '🔴 Marcar Salida (Clock Out)', class: 'btn-danger' },
+            7: { text: '🚶 Salida a Diligencia Personal', class: 'btn-dark' },
+            8: { text: '🚶 Regreso de Diligencia Personal', class: 'btn-primary' }
+        };
+
+        emp.allowedActions.forEach(actionType => {
+            const config = buttonConfig[actionType];
+            if (config) {
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = `btn ${config.class} action-btn shadow-sm`;
+                btn.textContent = config.text;
+                btn.onclick = () => submitPunch(actionType);
+                container.appendChild(btn);
+            }
+        });
+
+        document.getElementById('panelInput').classList.add('d-none');
+        document.getElementById('panelActions').classList.remove('d-none');
+
+        startCountdown(10);
+    }
+
+    // 6. REGISTRAR MARCA
+    async function submitPunch(recordType) {
+        clearInterval(countdownTimer);
+
+        try {
+            const response = await fetch('/Kiosk/Punch', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ employeeId: currentEmployeeId, type: recordType })
+            });
+
+            const result = await response.json();
+
+            if (result.success) {
+                document.getElementById('panelActions').classList.add('d-none');
+                document.getElementById('successMessage').textContent = result.message;
+
+                const warningBox = document.getElementById('warningAlert');
+                const warningText = document.getElementById('warningText');
+
+                if (result.warning) {
+                    soundWarning();
+                    warningText.textContent = result.warning;
+                    warningBox.classList.remove('d-none');
+                    setTimeout(resetToIdle, 5000);
+                } else {
+                    soundSuccess();
+                    warningBox.classList.add('d-none');
+                    setTimeout(resetToIdle, 3500);
+                }
+
+                document.getElementById('panelSuccess').classList.remove('d-none');
+            } else {
+                soundError();
+                alert(result.message);
+                resetToIdle();
+            }
+        } catch (err) {
+            soundError();
+            alert('Error al registrar la marca');
+            resetToIdle();
+        }
+    }
+
+    function resetToIdle() {
+        clearInterval(countdownTimer);
+        currentEmployeeId = 0;
+        clearInput();
+        showError('');
+
+        document.getElementById('panelActions').classList.add('d-none');
+        document.getElementById('panelSuccess').classList.add('d-none');
+        document.getElementById('panelInput').classList.remove('d-none');
+        input.focus();
+    }
+
+    function startCountdown(seconds) {
+        clearInterval(countdownTimer);
+        let timeLeft = seconds;
+        const span = document.getElementById('countdown');
+        span.textContent = timeLeft;
+
+        countdownTimer = setInterval(() => {
+            timeLeft--;
+            span.textContent = timeLeft;
+            if (timeLeft <= 0) {
+                resetToIdle();
+            }
+        }, 1000);
+    }
+    // Evita cualquier micro-desplazamiento accidental en Safari/iPad
+    document.addEventListener('touchmove', function (e) {
+        e.preventDefault();
+    }, { passive: false });
+
+</script>
+}
