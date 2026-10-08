@@ -84,6 +84,7 @@
                     <th>Entrada</th>
                     <th>Tardanza</th>
                     <th>Salida</th>
+                    <th>Salida Anticipada</th>
                     <th>Café Real</th>
                     <th>Almuerzo Real</th>
                     <th>Diligencias</th>
@@ -120,6 +121,23 @@
                             </td>
 
                             <td>@d.ClockOut</td>
+                            <td>
+                                @if (d.EarlyDepartureMinutes > 0)
+                                {
+                                    if (d.IsEarlyDepartureWaived)
+                                    {
+                                        <span class="text-success small fw-bold">0m (Con goce)</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-danger fw-bold">-@((d.EarlyDepartureMinutes / 60))h @((d.EarlyDepartureMinutes % 60))m</span>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="text-muted">0m</span>
+                                }
+                            </td>
 
                             <!-- Café -->
                             <td>
@@ -188,6 +206,7 @@
                 <span class="text-muted small fw-bold">DESGLOSE DE DEDUCCIONES APLICADAS:</span>
                 <ul class="list-unstyled mb-2 mt-1 small">
                     <li>⏱ Tardanzas de entrada: <span class="text-danger fw-bold">@Model.TotalLateMinutes min</span></li>
+                    <li>🚪 Salidas anticipadas no justif.: <span class="text-danger fw-bold">@Model.TotalEarlyDepartureMinutes min</span></li>
                     <li>☕ Exceso café (>15 min): <span class="text-danger fw-bold">@Model.TotalExcessCoffeeMinutes min</span></li>
                     <li>🍲 Exceso almuerzo (>45 min): <span class="text-danger fw-bold">@Model.TotalExcessLunchMinutes min</span></li>
                     <li>🚶 Diligencias personales (100%): <span class="text-danger fw-bold">@Model.TotalPersonalErrandMinutes min</span></li>

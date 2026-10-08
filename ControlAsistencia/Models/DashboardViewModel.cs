@@ -34,8 +34,8 @@
         // NUEVO: Tiempo total acumulado en diligencias personales (100% descontable)
         public int PersonalErrandMinutes { get; set; }
 
-        // TOTAL A DEDUCIR: Tardanza + Exceso café + Exceso almuerzo + 100% Diligencias
-        public int TotalExcessMinutes => LateMinutes + ExcessCoffeeMinutes + ExcessLunchMinutes + PersonalErrandMinutes;
+        // TOTAL A DEDUCIR: Tardanza + Exceso café + Exceso almuerzo + 100% Diligencias + salidas tempranas (si no fueron perdonadas)
+        public int TotalExcessMinutes => LateMinutes + (IsEarlyDepartureWaived ? 0 : EarlyDepartureMinutes) + ExcessCoffeeMinutes + ExcessLunchMinutes + PersonalErrandMinutes;
 
         public int OvertimeMinutes { get; set; }
         public string FormattedOvertime => OvertimeMinutes > 0
@@ -47,6 +47,11 @@
         // Novedad o justificación del día (si la hubiera)
         public string? TodayIncidentCategory { get; set; }
         public string? TodayIncidentDetail { get; set; }
+
+        // Salida Anticipada
+        public int EarlyDepartureMinutes { get; set; }
+        public bool IsEarlyDepartureWaived { get; set; } // ¿Perdonada por supervisor?
+        public string? EarlyDepartureReason { get; set; }
     }
 
     public class BiweeklyReportViewModel
@@ -57,21 +62,23 @@
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
         public string PeriodTitle { get; set; } = string.Empty;
-
+        
         public List<DailyReportRow> Days { get; set; } = new();
 
         public int TotalLateMinutes { get; set; }
+        public int TotalEarlyDepartureMinutes { get; set; } // <-- Salidas anticipadas
         public int TotalExcessCoffeeMinutes { get; set; }
         public int TotalExcessLunchMinutes { get; set; }
         public int TotalPersonalErrandMinutes { get; set; } // NUEVO: Acumulado diligencias
         public bool HasUnifiedLunch { get; set; }
         public int AllowedLunchMinutes => HasUnifiedLunch ? 60 : 45;
-
-        public int GrandTotalExcessMinutes => TotalLateMinutes + TotalExcessCoffeeMinutes + TotalExcessLunchMinutes + TotalPersonalErrandMinutes;
+                
+        public int GrandTotalExcessMinutes => TotalLateMinutes + TotalEarlyDepartureMinutes + TotalExcessCoffeeMinutes + TotalExcessLunchMinutes + TotalPersonalErrandMinutes;
         public string FormattedTotalExcess => $"{(GrandTotalExcessMinutes / 60)}h {(GrandTotalExcessMinutes % 60)}m ({GrandTotalExcessMinutes} min totales a descontar)";
 
         public int GrandTotalOvertimeMinutes { get; set; }
         public string FormattedTotalOvertime => $"{(GrandTotalOvertimeMinutes / 60)}h {(GrandTotalOvertimeMinutes % 60)}m ({GrandTotalOvertimeMinutes} min a pagar)";
+      
     }
 
     public class DailyReportRow
@@ -86,5 +93,7 @@
         public int ExcessMinutes { get; set; }
         public int OvertimeMinutes { get; set; }
         public string EffectiveHours { get; set; } = "0h 0m";
+        public int EarlyDepartureMinutes { get; set; }
+        public bool IsEarlyDepartureWaived { get; set; }
     }
 }

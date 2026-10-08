@@ -30,5 +30,7 @@ namespace ControlAsistencia.Models
         public string LoggedBy { get; set; } = string.Empty; // Supervisor que atendió la llamada
 
         public DateTime CreatedAtUtc { get; set; } = DateTime.UtcNow; // Momento exacto del registro
+                                                                      
+        public bool WaiveEarlyDeparture { get; set; } = false;  // Si es true, el supervisor perdonó la salida anticipada (no se descuenta de nómina)
     }
 }

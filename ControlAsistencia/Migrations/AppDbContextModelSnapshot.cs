@@ -47,6 +47,9 @@ namespace ControlAsistencia.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("TEXT");
 
+                    b.Property<bool>("WaiveEarlyDeparture")
+                        .HasColumnType("INTEGER");
+
                     b.HasKey("Id");
 
                     b.HasIndex("EmployeeId");

@@ -65,6 +65,7 @@
                         <th>Entrada</th>
                         <th>Tardanza</th>
                         <th>Salida</th>
+                        <th>Salida Anticipada</th>
                         <th>Café (15m)</th>
                         <th>Almuerzo (45m)</th>
                         <th>Diligencias</th>
@@ -116,6 +117,29 @@
 
                             <!-- Salida -->
                             <td>@emp.ClockOutTime</td>
+
+                            <!-- Salida Anticipada con Opción de Perdón -->
+                            <td>
+                                @if (emp.EarlyDepartureMinutes > 0)
+                                {
+                                    if (emp.IsEarlyDepartureWaived)
+                                    {
+                                        <span class="text-success fw-bold" title="Justificado: @emp.EarlyDepartureReason">
+                                            ✔ Con goce (@((emp.EarlyDepartureMinutes / 60))h @((emp.EarlyDepartureMinutes % 60))m)
+                                        </span>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-danger fw-bold">
+                                            -@((emp.EarlyDepartureMinutes / 60))h @((emp.EarlyDepartureMinutes % 60))m
+                                        </span>
+                                    }
+                                }
+                                else
+                                {
+                                    <span class="text-muted">0m</span>
+                                }
+                            </td>
 
                             <!-- Café: Texto normal y el exceso en rojo -->
                             <td>
@@ -218,7 +242,13 @@
                                                             <option value="Otro">Otro</option>
                                                         </select>
                                                     </div>
-
+                                                    <div class="form-check form-switch mb-3 p-3 bg-light rounded-3 border">
+                                                        <input class="form-check-input ms-0 me-2" type="checkbox" name="waiveEarlyDeparture" value="true" id="chkWaive-@emp.EmployeeId">
+                                                        <label class="form-check-label fw-bold text-success" for="chkWaive-@emp.EmployeeId">
+                                                            ⚖ Justificar con Goce de Sueldo (NO descontar tiempo faltante)
+                                                        </label>
+                                                        <small class="text-muted d-block mt-1">Marca esta casilla si la empresa autoriza pagarle el día completo a pesar de salir temprano.</small>
+                                                    </div>
                                                     <div class="mb-3">
                                                         <label class="form-label fw-semibold">Detalle de la Llamada / Situación</label>
                                                         <textarea name="detail" class="form-control" rows="3"

@@ -63,7 +63,7 @@ namespace ControlAsistencia.Controllers
         // 2. REGISTRO RÁPIDO DESDE EL DASHBOARD (Al recibir la llamada)
         [HttpPost]
         [ValidateAntiForgeryToken]
-        public async Task<IActionResult> CreateQuick(int employeeId, DateTime date, string category, string detail, string? returnUrl)
+        public async Task<IActionResult> CreateQuick(int employeeId, DateTime date, string category, string detail, bool waiveEarlyDeparture, string? returnUrl)
         {
             if (string.IsNullOrWhiteSpace(detail))
             {
@@ -77,6 +77,7 @@ namespace ControlAsistencia.Controllers
                 Date = date.Date,
                 Category = category,
                 Detail = detail.Trim(),
+                WaiveEarlyDeparture = waiveEarlyDeparture, // <-- NUEVO
                 LoggedBy = User.Identity?.Name ?? "Supervisor",
                 CreatedAtUtc = DateTime.UtcNow
             };
@@ -84,7 +85,10 @@ namespace ControlAsistencia.Controllers
             _context.AttendanceIncidents.Add(incident);
             await _context.SaveChangesAsync();
 
-            TempData["SuccessMessage"] = "Novedad registrada correctamente en la bitácora.";
+            TempData["SuccessMessage"] = waiveEarlyDeparture
+                ? "Salida anticipada justificada con goce de sueldo (no se descontará)."
+                : "Novedad registrada correctamente en la bitácora.";
+
             return Redirect(returnUrl ?? "/Dashboard");
         }
 
