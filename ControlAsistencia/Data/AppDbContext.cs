@@ -14,6 +14,7 @@ namespace ControlAsistencia.Data
         public DbSet<TimeRecord> TimeRecords => Set<TimeRecord>();
         public DbSet<User> Users => Set<User>();
         public DbSet<AttendanceIncident> AttendanceIncidents => Set<AttendanceIncident>();
+        public DbSet<Holiday> Holidays => Set<Holiday>();
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {

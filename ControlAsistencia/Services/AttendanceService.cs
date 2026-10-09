@@ -28,11 +28,17 @@ namespace ControlAsistencia.Services
 
         public const int MaxCoffeeMinutes = 15;
         public const int MaxLunchMinutes = 45;
-        public const int EarlyArrivalGraceMinutes = 20;
+        public const int EarlyArrivalGraceMinutes = 10;
 
         public AttendanceService(AppDbContext context)
         {
             _context = context;
+        }
+
+        // MÉTODO AUXILIAR: Verifica si una fecha es Feriado
+        public async Task<bool> IsHolidayAsync(DateTime date)
+        {
+            return await _context.Holidays.AnyAsync(h => h.Date.Date == date.Date);
         }
 
         public async Task<EmployeeStatusDto?> GetStatusByCodeOrPinAsync(string inputCode)
@@ -51,11 +57,13 @@ namespace ControlAsistencia.Services
                 .ToListAsync();
 
             var lastRecord = recentRecords.FirstOrDefault();
+            var today = DateTime.Today;
+            bool isHoliday = await IsHolidayAsync(today);
 
-            // 1. Declarar la variable AQUÍ (AFUERA del return)
-            bool appliesUnified = employee.HasUnifiedLunch && DateTime.Today.DayOfWeek != DayOfWeek.Saturday;
+            // REGLA: La pausa unificada aplica ÚNICAMENTE de Lunes a Viernes y si NO es feriado
+            bool isWeekdayNormal = today.DayOfWeek >= DayOfWeek.Monday && today.DayOfWeek <= DayOfWeek.Friday && !isHoliday;
+            bool appliesUnified = employee.HasUnifiedLunch && isWeekdayNormal;
 
-            // 2. Ahora sí retornar el objeto
             return new EmployeeStatusDto
             {
                 EmployeeId = employee.Id,
@@ -66,7 +74,6 @@ namespace ControlAsistencia.Services
             };
         }
 
-        // MÁQUINA DE ESTADOS (Detecta si tiene Pausa Unificada)
         private List<RecordType> CalculateAllowedActions(List<TimeRecord> records, bool hasUnifiedLunch)
         {
             var actions = new List<RecordType>();
@@ -104,26 +111,14 @@ namespace ControlAsistencia.Services
 
             if (hasUnifiedLunch)
             {
-                // CASO ESPECIAL: OMITIR CAFÉ MATUTINO
-                if (!alreadyHadLunch)
-                {
-                    actions.Add(RecordType.LunchStart); // Pasa directo a almuerzo
-                }
+                if (!alreadyHadLunch) actions.Add(RecordType.LunchStart);
             }
             else
             {
-                // CASO ESTÁNDAR: SECUENCIA OBLIGATORIA
-                if (!alreadyHadCoffee)
-                {
-                    actions.Add(RecordType.CoffeeStart);
-                }
-                else if (!alreadyHadLunch)
-                {
-                    actions.Add(RecordType.LunchStart);
-                }
+                if (!alreadyHadCoffee) actions.Add(RecordType.CoffeeStart);
+                else if (!alreadyHadLunch) actions.Add(RecordType.LunchStart);
             }
 
-            // Diligencias y Salida siempre disponibles mientras labora
             actions.Add(RecordType.PersonalStart);
             actions.Add(RecordType.ClockOut);
 
@@ -138,6 +133,8 @@ namespace ControlAsistencia.Services
 
             var nowUtc = DateTime.UtcNow;
             var nowLocal = nowUtc.ToLocalTime();
+            bool isHoliday = await IsHolidayAsync(nowLocal.Date);
+            bool isSpecialDay = nowLocal.DayOfWeek == DayOfWeek.Sunday || isHoliday;
 
             string? warning = null;
             string baseMessage = "";
@@ -148,17 +145,25 @@ namespace ControlAsistencia.Services
                 .Take(10)
                 .ToListAsync();
 
-            bool isSaturday = DateTime.Today.DayOfWeek == DayOfWeek.Saturday;
-            int allowedLunch = (employee.HasUnifiedLunch && !isSaturday) ? 60 : MaxLunchMinutes;
+            // La pausa unificada solo rige L-V ordinario
+            bool isWeekdayNormal = nowLocal.DayOfWeek >= DayOfWeek.Monday && nowLocal.DayOfWeek <= DayOfWeek.Friday && !isHoliday;
+            int allowedLunch = (employee.HasUnifiedLunch && isWeekdayNormal) ? 60 : MaxLunchMinutes;
 
             switch (type)
             {
                 case RecordType.ClockIn:
-                    baseMessage = "¡Bienvenido/a! Entrada registrada exitosamente.";
-                    int lateMin = CalculateLateMinutes(nowLocal, nowLocal.DayOfWeek);
-                    if (lateMin > 0)
+                    baseMessage = isSpecialDay
+                        ? "¡Bienvenido/a! Entrada registrada (Jornada Extraordinaria 100%)."
+                        : "¡Bienvenido/a! Entrada registrada exitosamente.";
+
+                    // En domingos y feriados NO hay tardanza
+                    if (!isSpecialDay)
                     {
-                        warning = $"⚠️ ATENCIÓN: Registras una TARDÍA de {lateMin} {(lateMin == 1 ? "minuto" : "minutos")}.";
+                        int lateMin = CalculateLateMinutes(nowLocal, nowLocal.DayOfWeek);
+                        if (lateMin > 0)
+                        {
+                            warning = $"⚠️ ATENCIÓN: Registras una TARDÍA de {lateMin} {(lateMin == 1 ? "minuto" : "minutos")}.";
+                        }
                     }
                     break;
 
@@ -205,7 +210,7 @@ namespace ControlAsistencia.Services
                     break;
 
                 case RecordType.LunchStart:
-                    baseMessage = employee.HasUnifiedLunch
+                    baseMessage = (employee.HasUnifiedLunch && isWeekdayNormal)
                         ? "¡Buen provecho! Cuentas con 60 minutos de almuerzo unificado."
                         : "¡Buen provecho! Recuerda que tienes 45 minutos de almuerzo.";
                     break;
@@ -246,7 +251,7 @@ namespace ControlAsistencia.Services
             else if (dayOfWeek == DayOfWeek.Saturday)
                 officialStartTime = new TimeSpan(7, 0, 0);
             else
-                return 0;
+                return 0; // Domingos no tienen tardanza
 
             var actualInTime = localIn.TimeOfDay;
             if (actualInTime > officialStartTime)
@@ -255,47 +260,6 @@ namespace ControlAsistencia.Services
             }
 
             return 0;
-        }
-
-        public int CalculateOvertimeMinutes(DateTime localIn, DateTime? localOut, DayOfWeek dayOfWeek)
-        {
-            int totalOvertime = 0;
-            TimeSpan officialStartTime;
-            TimeSpan officialEndTime;
-
-            if (dayOfWeek >= DayOfWeek.Monday && dayOfWeek <= DayOfWeek.Friday)
-            {
-                officialStartTime = new TimeSpan(8, 0, 0);
-                officialEndTime = new TimeSpan(17, 30, 0);
-            }
-            else if (dayOfWeek == DayOfWeek.Saturday)
-            {
-                officialStartTime = new TimeSpan(7, 0, 0);
-                officialEndTime = new TimeSpan(12, 30, 0);
-            }
-            else
-            {
-                if (localOut.HasValue) return (int)(localOut.Value - localIn).TotalMinutes;
-                return 0;
-            }
-
-            var actualInTime = localIn.TimeOfDay;
-            if (actualInTime < officialStartTime)
-            {
-                var earlyDiffMinutes = (int)(officialStartTime - actualInTime).TotalMinutes;
-                if (earlyDiffMinutes > EarlyArrivalGraceMinutes) totalOvertime += earlyDiffMinutes;
-            }
-
-            if (localOut.HasValue)
-            {
-                var actualOutTime = localOut.Value.TimeOfDay;
-                if (actualOutTime > officialEndTime)
-                {
-                    totalOvertime += (int)(actualOutTime - officialEndTime).TotalMinutes;
-                }
-            }
-
-            return totalOvertime;
         }
 
         // 1. DASHBOARD DIARIO
@@ -307,13 +271,15 @@ namespace ControlAsistencia.Services
             var startUtc = startOfDayLocal.ToUniversalTime();
             var endUtc = endOfDayLocal.ToUniversalTime();
 
+            bool isHoliday = await IsHolidayAsync(date.Date);
+            bool isSpecialDay = date.DayOfWeek == DayOfWeek.Sunday || isHoliday;
+
             var employees = await _context.Employees.Where(e => e.IsActive).OrderBy(e => e.FullName).ToListAsync();
             var dayRecords = await _context.TimeRecords
                 .Where(r => r.TimestampUtc >= startUtc && r.TimestampUtc <= endUtc)
                 .OrderBy(r => r.TimestampUtc)
                 .ToListAsync();
 
-            // Leer las novedades o llamadas registradas en esta fecha
             var dayIncidents = await _context.AttendanceIncidents
                 .Where(i => i.Date >= startOfDayLocal && i.Date <= endOfDayLocal)
                 .ToListAsync();
@@ -326,27 +292,32 @@ namespace ControlAsistencia.Services
 
             foreach (var emp in employees)
             {
-                var empRecords = dayRecords.Where(r => r.EmployeeId == emp.Id).ToList();
+                var empRecs = dayRecords.Where(r => r.EmployeeId == emp.Id).ToList();
+                var incident = dayIncidents.FirstOrDefault(i => i.EmployeeId == emp.Id);
+
+                // La madre solo tiene almuerzo unificado de L-V no feriado
+                bool isWeekdayNormal = date.DayOfWeek >= DayOfWeek.Monday && date.DayOfWeek <= DayOfWeek.Friday && !isHoliday;
+                bool hasUnifiedToday = emp.HasUnifiedLunch && isWeekdayNormal;
+
                 var detail = new EmployeeDailyDetailDto
                 {
                     EmployeeId = emp.Id,
                     FullName = emp.FullName,
                     CardCode = emp.CardCode,
-                    HasUnifiedLunch = emp.HasUnifiedLunch
+                    HasUnifiedLunch = hasUnifiedToday
                 };
-                // Asociar la novedad si existe para este empleado hoy
-                var incident = dayIncidents.FirstOrDefault(i => i.EmployeeId == emp.Id);
+
                 if (incident != null)
                 {
                     detail.TodayIncidentCategory = incident.Category;
                     detail.TodayIncidentDetail = incident.Detail;
                 }
 
-                if (empRecords.Any())
+                if (empRecs.Any())
                 {
-                    var firstIn = empRecords.FirstOrDefault(r => r.Type == RecordType.ClockIn);
-                    var lastOut = empRecords.LastOrDefault(r => r.Type == RecordType.ClockOut);
-                    var lastRecord = empRecords.Last();
+                    var firstIn = empRecs.FirstOrDefault(r => r.Type == RecordType.ClockIn);
+                    var lastOut = empRecs.LastOrDefault(r => r.Type == RecordType.ClockOut);
+                    var lastRecord = empRecs.Last();
 
                     if (firstIn != null) detail.ClockInTime = firstIn.TimestampUtc.ToLocalTime().ToString("hh:mm tt");
                     if (lastOut != null && lastRecord.Type == RecordType.ClockOut)
@@ -384,18 +355,16 @@ namespace ControlAsistencia.Services
                             break;
                     }
 
-                    // Tiempos reales
-                    int coffeeMin = CalculateDurationMinutes(empRecords, RecordType.CoffeeStart, RecordType.CoffeeEnd);
-                    int lunchMin = CalculateDurationMinutes(empRecords, RecordType.LunchStart, RecordType.LunchEnd);
-                    int personalMin = CalculateDurationMinutes(empRecords, RecordType.PersonalStart, RecordType.PersonalEnd);
+                    int coffeeMin = CalculateDurationMinutes(empRecs, RecordType.CoffeeStart, RecordType.CoffeeEnd);
+                    int lunchMin = CalculateDurationMinutes(empRecs, RecordType.LunchStart, RecordType.LunchEnd);
+                    int personalMin = CalculateDurationMinutes(empRecs, RecordType.PersonalStart, RecordType.PersonalEnd);
 
                     detail.CoffeeMinutes = coffeeMin;
                     detail.LunchMinutes = lunchMin;
                     detail.PersonalErrandMinutes = personalMin;
 
-                    // Límites según su perfil
-                    int allowedCoffee = emp.HasUnifiedLunch ? 0 : MaxCoffeeMinutes;
-                    int allowedLunch = emp.HasUnifiedLunch ? 60 : MaxLunchMinutes;
+                    int allowedCoffee = hasUnifiedToday ? 0 : MaxCoffeeMinutes;
+                    int allowedLunch = hasUnifiedToday ? 60 : MaxLunchMinutes;
 
                     detail.ExcessCoffeeMinutes = Math.Max(0, coffeeMin - allowedCoffee);
                     detail.ExcessLunchMinutes = Math.Max(0, lunchMin - allowedLunch);
@@ -405,79 +374,87 @@ namespace ControlAsistencia.Services
                         var localIn = firstIn.TimestampUtc.ToLocalTime();
                         DateTime? localOut = (lastOut != null && lastRecord.Type == RecordType.ClockOut) ? lastOut.TimestampUtc.ToLocalTime() : null;
 
-                        detail.LateMinutes = CalculateLateMinutes(localIn, localIn.DayOfWeek);
-                        detail.OvertimeMinutes = CalculateOvertimeMinutes(localIn, localOut, localIn.DayOfWeek);
-
                         DateTime endRef = (lastOut != null && lastRecord.Type == RecordType.ClockOut) ? lastOut.TimestampUtc : DateTime.UtcNow;
                         var totalSpan = endRef - firstIn.TimestampUtc;
 
-                        // HORAS EFECTIVAS:
-                        // L-V: Almuerzo y Café son no remunerados (se restan ambos de la jornada)
-                        // Sábado: El café de 15m es pagado por la empresa (solo se resta exceso de café si lo hubiera)
-                        int unpaidBreakMinutes = 0;
-                        if (localIn.DayOfWeek == DayOfWeek.Saturday)
+                        // EN DOMINGOS O FERIADOS:
+                        if (isSpecialDay)
                         {
-                            unpaidBreakMinutes = lunchMin + detail.ExcessCoffeeMinutes;
+                            detail.LateMinutes = 0;
+                            detail.EarlyDepartureMinutes = 0;
+
+                            // 100% horas extras (empresa regala café y almuerzo; solo descuenta excesos si los hubo)
+                            int unpaidBreaks = detail.ExcessCoffeeMinutes + detail.ExcessLunchMinutes + personalMin;
+                            int totalExtraMin = (int)Math.Max(0, totalSpan.TotalMinutes - unpaidBreaks);
+
+                            detail.OvertimeMinutes = totalExtraMin;
+                            detail.NetWorkingHours = $"{(totalExtraMin / 60)}h {(totalExtraMin % 60)}m (Extra 100%)";
                         }
+                        // DÍAS ORDINARIOS (Lunes a Sábado):
                         else
                         {
-                            unpaidBreakMinutes = lunchMin + coffeeMin;
-                        }
+                            detail.LateMinutes = CalculateLateMinutes(localIn, localIn.DayOfWeek);
 
-                        var netSpan = totalSpan - TimeSpan.FromMinutes(unpaidBreakMinutes) - TimeSpan.FromMinutes(personalMin);
-                        if (netSpan < TimeSpan.Zero) netSpan = TimeSpan.Zero;
-                        detail.NetWorkingHours = $"{(int)netSpan.TotalHours}h {netSpan.Minutes}m";
+                            // Horas Extras Ordinarias
+                            int overtime = 0;
+                            var officialEndTime = (localIn.DayOfWeek == DayOfWeek.Saturday) ? new TimeSpan(12, 30, 0) : new TimeSpan(17, 30, 0);
 
-                        // CÁLCULO DE SALIDA ANTICIPADA:
-                        if (lastOut != null && lastRecord.Type == RecordType.ClockOut)
-                        {
-                            var officialEndTime = (localIn.DayOfWeek == DayOfWeek.Saturday)
-                                ? new TimeSpan(12, 30, 0)
-                                : new TimeSpan(17, 30, 0);
-
-                            var actualOutTime = lastOut.TimestampUtc.ToLocalTime().TimeOfDay;
-
-                            // SOLO puede haber salida anticipada si marcó ANTES de la hora oficial:
-                            if (actualOutTime < officialEndTime)
+                            // Temprano
+                            var officialStartTime = (localIn.DayOfWeek == DayOfWeek.Saturday) ? new TimeSpan(7, 0, 0) : new TimeSpan(8, 0, 0);
+                            if (localIn.TimeOfDay < officialStartTime)
                             {
-                                int remainingClockMinutes = (int)(officialEndTime - actualOutTime).TotalMinutes;
+                                int earlyMin = (int)(officialStartTime - localIn.TimeOfDay).TotalMinutes;
+                                if (earlyMin > EarlyArrivalGraceMinutes) overtime += earlyMin;
+                            }
+                            // Tarde
+                            if (localOut.HasValue && localOut.Value.TimeOfDay > officialEndTime)
+                            {
+                                overtime += (int)(localOut.Value.TimeOfDay - officialEndTime).TotalMinutes;
+                            }
+                            detail.OvertimeMinutes = overtime;
 
-                                // EL ALMUERZO Y CAFÉ SOLO SE RESTAN DE LUNES A VIERNES
-                                // (El sábado NO existe almuerzo y el café es regalado por la empresa)
-                                if (localIn.DayOfWeek != DayOfWeek.Saturday)
+                            // Salida Anticipada
+                            if (lastOut != null && lastRecord.Type == RecordType.ClockOut)
+                            {
+                                var actualOutTime = localOut!.Value.TimeOfDay;
+                                if (actualOutTime < officialEndTime)
                                 {
-                                    if (lunchMin == 0)
+                                    int remainingClockMinutes = (int)(officialEndTime - actualOutTime).TotalMinutes;
+
+                                    if (localIn.DayOfWeek != DayOfWeek.Saturday)
                                     {
-                                        int unscheduledLunch = emp.HasUnifiedLunch ? 60 : MaxLunchMinutes;
-                                        remainingClockMinutes -= unscheduledLunch;
+                                        if (lunchMin == 0) remainingClockMinutes -= (hasUnifiedToday ? 60 : MaxLunchMinutes);
+                                        if (coffeeMin == 0 && !hasUnifiedToday) remainingClockMinutes -= MaxCoffeeMinutes;
                                     }
 
-                                    if (coffeeMin == 0 && !emp.HasUnifiedLunch)
-                                    {
-                                        remainingClockMinutes -= MaxCoffeeMinutes;
-                                    }
+                                    detail.EarlyDepartureMinutes = Math.Max(0, remainingClockMinutes);
+                                }
+                                else
+                                {
+                                    detail.EarlyDepartureMinutes = 0;
                                 }
 
-                                detail.EarlyDepartureMinutes = Math.Max(0, remainingClockMinutes);
-                            }
-                            else
-                            {
-                                // Si salió a las 5:30 p.m. o después, es CERO siempre
-                                detail.EarlyDepartureMinutes = 0;
+                                if (incident != null && incident.WaiveEarlyDeparture)
+                                {
+                                    detail.IsEarlyDepartureWaived = true;
+                                    detail.EarlyDepartureReason = incident.Detail;
+                                }
                             }
 
-                            // Verificar si el supervisor perdonó la salida en la bitácora
-                            if (incident != null && incident.WaiveEarlyDeparture)
-                            {
-                                detail.IsEarlyDepartureWaived = true;
-                                detail.EarlyDepartureReason = incident.Detail;
-                            }
+                            // Horas Efectivas L-V vs Sáb
+                            int unpaidBreaks = (localIn.DayOfWeek == DayOfWeek.Saturday)
+                                ? (detail.ExcessCoffeeMinutes + detail.ExcessLunchMinutes)
+                                : (lunchMin + coffeeMin);
+
+                            var netSpan = totalSpan - TimeSpan.FromMinutes(unpaidBreaks) - TimeSpan.FromMinutes(personalMin);
+                            if (netSpan < TimeSpan.Zero) netSpan = TimeSpan.Zero;
+                            detail.NetWorkingHours = $"{(int)netSpan.TotalHours}h {netSpan.Minutes}m";
                         }
                     }
                 }
                 else
                 {
-                    detail.CurrentStatus = "Sin Ingreso";
+                    detail.CurrentStatus = isSpecialDay ? "Día Libre / Feriado" : "Sin Ingreso";
                     detail.StatusBadgeClass = "bg-light text-muted border";
                     vm.OutCount++;
                 }
@@ -517,6 +494,10 @@ namespace ControlAsistencia.Services
                 .OrderBy(r => r.TimestampUtc)
                 .ToListAsync();
 
+            var holidays = await _context.Holidays
+                .Where(h => h.Date >= startDate.Date && h.Date <= endDate.Date)
+                .ToListAsync();
+
             var report = new BiweeklyReportViewModel
             {
                 EmployeeId = employee.Id,
@@ -528,9 +509,6 @@ namespace ControlAsistencia.Services
                 PeriodTitle = $"{(quincena == 1 ? "1ra" : "2da")} Quincena - {startDate:MMMM yyyy}".ToUpper()
             };
 
-            int allowedCoffee = employee.HasUnifiedLunch ? 0 : MaxCoffeeMinutes;
-            int allowedLunch = employee.HasUnifiedLunch ? 60 : MaxLunchMinutes;
-
             for (var day = startDate.Date; day <= endDate.Date; day = day.AddDays(1))
             {
                 var dayStartUtc = day.ToUniversalTime();
@@ -539,6 +517,11 @@ namespace ControlAsistencia.Services
                 var dayRecs = records.Where(r => r.TimestampUtc >= dayStartUtc && r.TimestampUtc <= dayEndUtc).ToList();
                 if (!dayRecs.Any()) continue;
 
+                bool isHoliday = holidays.Any(h => h.Date.Date == day.Date);
+                bool isSpecialDay = day.DayOfWeek == DayOfWeek.Sunday || isHoliday;
+                bool isWeekdayNormal = day.DayOfWeek >= DayOfWeek.Monday && day.DayOfWeek <= DayOfWeek.Friday && !isHoliday;
+                bool hasUnifiedToday = employee.HasUnifiedLunch && isWeekdayNormal;
+
                 var inPunch = dayRecs.FirstOrDefault(r => r.Type == RecordType.ClockIn);
                 var outPunch = dayRecs.LastOrDefault(r => r.Type == RecordType.ClockOut);
 
@@ -546,91 +529,79 @@ namespace ControlAsistencia.Services
                 int lunch = CalculateDurationMinutes(dayRecs, RecordType.LunchStart, RecordType.LunchEnd);
                 int personal = CalculateDurationMinutes(dayRecs, RecordType.PersonalStart, RecordType.PersonalEnd);
 
+                int allowedCoffee = hasUnifiedToday ? 0 : MaxCoffeeMinutes;
+                int allowedLunch = hasUnifiedToday ? 60 : MaxLunchMinutes;
+
                 int excessCoffee = Math.Max(0, coffee - allowedCoffee);
                 int excessLunch = Math.Max(0, lunch - allowedLunch);
 
                 int lateMin = 0;
+                int earlyDepMin = 0;
+                bool isWaived = false;
                 int dayOvertime = 0;
                 string effHours = "0h 0m";
 
-                if (inPunch != null)
+                if (inPunch != null && outPunch != null)
                 {
                     var localIn = inPunch.TimestampUtc.ToLocalTime();
-                    DateTime? localOut = outPunch?.TimestampUtc.ToLocalTime();
+                    var localOut = outPunch.TimestampUtc.ToLocalTime();
+                    var totalDaySpan = outPunch.TimestampUtc - inPunch.TimestampUtc;
 
-                    lateMin = CalculateLateMinutes(localIn, localIn.DayOfWeek);
-                    dayOvertime = CalculateOvertimeMinutes(localIn, localOut, localIn.DayOfWeek);
-
-                    if (outPunch != null)
+                    if (isSpecialDay)
                     {
-                        int unpaidBreakMinutes = (localIn.DayOfWeek == DayOfWeek.Saturday)
-                            ? (lunch + excessCoffee)
+                        // 100% HORAS EXTRAS EN DOMINGO / FERIADO
+                        lateMin = 0;
+                        earlyDepMin = 0;
+                        int unpaidExcess = excessCoffee + excessLunch + personal;
+                        dayOvertime = (int)Math.Max(0, totalDaySpan.TotalMinutes - unpaidExcess);
+                        effHours = $"{(dayOvertime / 60)}h {(dayOvertime % 60)}m (100% Extra)";
+                    }
+                    else
+                    {
+                        // DÍAS ORDINARIOS
+                        lateMin = CalculateLateMinutes(localIn, localIn.DayOfWeek);
+
+                        // Horas extras ordinarias
+                        var officialStart = (localIn.DayOfWeek == DayOfWeek.Saturday) ? new TimeSpan(7, 0, 0) : new TimeSpan(8, 0, 0);
+                        var officialEnd = (day.DayOfWeek == DayOfWeek.Saturday) ? new TimeSpan(12, 30, 0) : new TimeSpan(17, 30, 0);
+
+                        if (localIn.TimeOfDay < officialStart)
+                        {
+                            int earlyM = (int)(officialStart - localIn.TimeOfDay).TotalMinutes;
+                            if (earlyM > EarlyArrivalGraceMinutes) dayOvertime += earlyM;
+                        }
+                        if (localOut.TimeOfDay > officialEnd)
+                        {
+                            dayOvertime += (int)(localOut.TimeOfDay - officialEnd).TotalMinutes;
+                        }
+
+                        // Salida anticipada
+                        if (localOut.TimeOfDay < officialEnd)
+                        {
+                            int remClock = (int)(officialEnd - localOut.TimeOfDay).TotalMinutes;
+                            if (day.DayOfWeek != DayOfWeek.Saturday)
+                            {
+                                if (lunch == 0) remClock -= (hasUnifiedToday ? 60 : MaxLunchMinutes);
+                                if (coffee == 0 && !hasUnifiedToday) remClock -= MaxCoffeeMinutes;
+                            }
+                            earlyDepMin = Math.Max(0, remClock);
+                        }
+
+                        var dayInc = await _context.AttendanceIncidents
+                            .FirstOrDefaultAsync(i => i.EmployeeId == employeeId && i.Date == day.Date && i.WaiveEarlyDeparture);
+                        if (dayInc != null) isWaived = true;
+
+                        int unpaidBreaks = (day.DayOfWeek == DayOfWeek.Saturday)
+                            ? (excessCoffee + excessLunch)
                             : (lunch + coffee);
 
-                        var net = (outPunch.TimestampUtc - inPunch.TimestampUtc)
-                                  - TimeSpan.FromMinutes(unpaidBreakMinutes)
-                                  - TimeSpan.FromMinutes(personal);
-
+                        var net = totalDaySpan - TimeSpan.FromMinutes(unpaidBreaks) - TimeSpan.FromMinutes(personal);
                         if (net < TimeSpan.Zero) net = TimeSpan.Zero;
                         effHours = $"{(int)net.TotalHours}h {net.Minutes}m";
                     }
                 }
-                // Salida Anticipada en la Quincena
-                int earlyDepMin = 0;
-                bool isWaived = false;
-
-                if (inPunch != null && outPunch != null)
-                {
-                    var dayInc = await _context.AttendanceIncidents
-                        .FirstOrDefaultAsync(i => i.EmployeeId == employeeId && i.Date == day.Date && i.WaiveEarlyDeparture);
-                     
-                    if (dayInc != null) isWaived = true;
-
-                    var officialEnd = (day.DayOfWeek == DayOfWeek.Saturday)
-                        ? new TimeSpan(12, 30, 0)
-                        : new TimeSpan(17, 30, 0);
-
-                    var actualOut = outPunch.TimestampUtc.ToLocalTime().TimeOfDay;
-
-                    // Solo si salió ANTES de la hora oficial:
-                    if (actualOut < officialEnd)
-                    {
-                        int remClock = (int)(officialEnd - actualOut).TotalMinutes;
-
-                        // Solo de Lunes a Viernes se restan almuerzos o cafés no disfrutados:
-                        if (day.DayOfWeek != DayOfWeek.Saturday)
-                        {
-                            if (lunch == 0)
-                            {
-                                int unLunch = employee.HasUnifiedLunch ? 60 : MaxLunchMinutes;
-                                remClock -= unLunch;
-                            }
-
-                            if (coffee == 0 && !employee.HasUnifiedLunch)
-                            {
-                                remClock -= MaxCoffeeMinutes;
-                            }
-                        }
-
-                        earlyDepMin = Math.Max(0, remClock);
-                    }
-                    else
-                    {
-                        earlyDepMin = 0;
-                    }
-
-                    // Horas efectivas
-                    int unpaidBreakMinutes = (day.DayOfWeek == DayOfWeek.Saturday) ? (lunch + excessCoffee) : (lunch + coffee);
-                    var net = (outPunch.TimestampUtc - inPunch.TimestampUtc)
-                              - TimeSpan.FromMinutes(unpaidBreakMinutes)
-                              - TimeSpan.FromMinutes(personal);
-
-                    if (net < TimeSpan.Zero) net = TimeSpan.Zero;
-                    effHours = $"{(int)net.TotalHours}h {net.Minutes}m";
-                }
 
                 int totalDayDeduction = lateMin + (isWaived ? 0 : earlyDepMin) + excessCoffee + excessLunch + personal;
-                //int totalDayDeduction = lateMin + excessCoffee + excessLunch + personal;
 
                 report.Days.Add(new DailyReportRow
                 {
@@ -638,14 +609,14 @@ namespace ControlAsistencia.Services
                     ClockIn = inPunch?.TimestampUtc.ToLocalTime().ToString("hh:mm tt") ?? "--:--",
                     ClockOut = outPunch?.TimestampUtc.ToLocalTime().ToString("hh:mm tt") ?? "--:--",
                     LateMinutes = lateMin,
+                    EarlyDepartureMinutes = earlyDepMin,
+                    IsEarlyDepartureWaived = isWaived,
                     CoffeeMinutes = coffee,
                     LunchMinutes = lunch,
                     PersonalErrandMinutes = personal,
                     ExcessMinutes = totalDayDeduction,
                     OvertimeMinutes = dayOvertime,
-                    EffectiveHours = effHours,
-                    EarlyDepartureMinutes = earlyDepMin,
-                    IsEarlyDepartureWaived = isWaived
+                    EffectiveHours = effHours
                 });
 
                 report.TotalLateMinutes += lateMin;
@@ -681,7 +652,6 @@ namespace ControlAsistencia.Services
             return (int)duration.TotalMinutes;
         }
 
-        // GENERADOR DE EXCEL
         public byte[] GenerateBiweeklyExcel(BiweeklyReportViewModel report)
         {
             using var workbook = new XLWorkbook();
@@ -690,20 +660,19 @@ namespace ControlAsistencia.Services
             ws.Cell("A1").Value = "REPORTE DE ASISTENCIA Y LIQUIDACIÓN DE TIEMPOS";
             ws.Cell("A1").Style.Font.Bold = true;
             ws.Cell("A1").Style.Font.FontSize = 14;
-            ws.Range("A1:J1").Merge();
+            ws.Range("A1:K1").Merge();
 
-            string lunchPolicy = report.HasUnifiedLunch ? "Almuerzo Unificado: 60m (Sin café)" : "Café: 15m | Almuerzo: 45m";
-            ws.Cell("A2").Value = $"Colaborador: {report.FullName} (ID: {report.CardCode}) - Política: {lunchPolicy}";
+            ws.Cell("A2").Value = $"Colaborador: {report.FullName} (ID: {report.CardCode})";
             ws.Cell("A2").Style.Font.Bold = true;
             ws.Range("A2:E2").Merge();
 
             ws.Cell("F2").Value = $"Periodo: {report.PeriodTitle} ({report.StartDate:dd/MM/yyyy} al {report.EndDate:dd/MM/yyyy})";
             ws.Cell("F2").Style.Font.Bold = true;
-            ws.Range("F2:J2").Merge();
+            ws.Range("F2:K2").Merge();
 
             string[] headers = {
-                "Fecha", "Entrada", "Tardanza (min)", "Salida", "Café (min)",
-                $"Almuerzo ({report.AllowedLunchMinutes}m)", "Diligencias (min)", "Total Descuento (min)",
+                "Fecha", "Entrada", "Tardanza (min)", "Salida", "Salida Antic.", "Café (min)",
+                "Almuerzo (min)", "Diligencias (min)", "Total Descuento (min)",
                 "Horas Extras (min)", "Horas Efectivas"
             };
 
@@ -724,38 +693,39 @@ namespace ControlAsistencia.Services
                 ws.Cell(row, 2).Value = d.ClockIn;
                 ws.Cell(row, 3).Value = d.LateMinutes;
                 ws.Cell(row, 4).Value = d.ClockOut;
-                ws.Cell(row, 5).Value = d.CoffeeMinutes;
-                ws.Cell(row, 6).Value = d.LunchMinutes;
-                ws.Cell(row, 7).Value = d.PersonalErrandMinutes;
-                ws.Cell(row, 8).Value = d.ExcessMinutes;
-                ws.Cell(row, 9).Value = d.OvertimeMinutes;
-                ws.Cell(row, 10).Value = d.EffectiveHours;
+                ws.Cell(row, 5).Value = d.IsEarlyDepartureWaived ? "0 (Con goce)" : d.EarlyDepartureMinutes.ToString();
+                ws.Cell(row, 6).Value = d.CoffeeMinutes;
+                ws.Cell(row, 7).Value = d.LunchMinutes;
+                ws.Cell(row, 8).Value = d.PersonalErrandMinutes;
+                ws.Cell(row, 9).Value = d.ExcessMinutes;
+                ws.Cell(row, 10).Value = d.OvertimeMinutes;
+                ws.Cell(row, 11).Value = d.EffectiveHours;
 
-                ws.Range(row, 1, row, 10).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                ws.Range(row, 1, row, 11).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
                 if (d.ExcessMinutes > 0)
                 {
-                    ws.Cell(row, 8).Style.Font.FontColor = XLColor.Red;
-                    ws.Cell(row, 8).Style.Font.Bold = true;
+                    ws.Cell(row, 9).Style.Font.FontColor = XLColor.Red;
+                    ws.Cell(row, 9).Style.Font.Bold = true;
                 }
 
                 if (d.OvertimeMinutes > 0)
                 {
-                    ws.Cell(row, 9).Style.Font.FontColor = XLColor.Green;
-                    ws.Cell(row, 9).Style.Font.Bold = true;
+                    ws.Cell(row, 10).Style.Font.FontColor = XLColor.Green;
+                    ws.Cell(row, 10).Style.Font.Bold = true;
                 }
 
                 row++;
             }
 
-            ws.Range(4, 1, row - 1, 10).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
-            ws.Range(4, 1, row - 1, 10).Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+            ws.Range(4, 1, row - 1, 11).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            ws.Range(4, 1, row - 1, 11).Style.Border.InsideBorder = XLBorderStyleValues.Thin;
 
             row++;
             ws.Cell(row, 1).Value = "DESGLOSE DEDUCCIONES:";
             ws.Cell(row, 1).Style.Font.Bold = true;
             ws.Cell(row, 2).Value = $"Tardanzas: {report.TotalLateMinutes}m | Salidas anticipadas: {report.TotalEarlyDepartureMinutes}m | Café excedido: {report.TotalExcessCoffeeMinutes}m | Almuerzo excedido: {report.TotalExcessLunchMinutes}m | Diligencias: {report.TotalPersonalErrandMinutes}m";
-            ws.Range(row, 2, row, 10).Merge();
+            ws.Range(row, 2, row, 11).Merge();
 
             row++;
             ws.Cell(row, 1).Value = "TOTAL A DEDUCIR EN NÓMINA:";
@@ -770,7 +740,7 @@ namespace ControlAsistencia.Services
             ws.Cell(row, 7).Value = report.FormattedTotalOvertime;
             ws.Cell(row, 7).Style.Font.Bold = true;
             ws.Cell(row, 7).Style.Font.FontColor = XLColor.Green;
-            ws.Range(row, 7, row, 10).Merge();
+            ws.Range(row, 7, row, 11).Merge();
 
             ws.Columns().AdjustToContents();
 

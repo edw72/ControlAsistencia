@@ -94,6 +94,28 @@ namespace ControlAsistencia.Migrations
                     b.ToTable("Employees");
                 });
 
+            modelBuilder.Entity("ControlAsistencia.Models.Holiday", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("Date")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Holidays");
+                });
+
             modelBuilder.Entity("ControlAsistencia.Models.TimeRecord", b =>
                 {
                     b.Property<int>("Id")
