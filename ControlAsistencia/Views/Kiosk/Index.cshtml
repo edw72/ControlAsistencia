@@ -24,16 +24,19 @@
     }
 
     .numpad-btn {
-        height: 94px; /* <-- Antes 68px, ahora mucho más alto para dedotes */
-        font-size: 1.85rem; /* <-- Números más grandes y legibles */
+        height: 84px;
+        font-size: 1.85rem;
         font-weight: 700;
         border-radius: 16px;
-        transition: transform 0.08s ease;
-        touch-action: none !important;
+        touch-action: manipulation !important;
         -webkit-tap-highlight-color: transparent !important;
+        user-select: none;
+        -webkit-user-select: none;
     }
+    /* Respuesta visual instantánea sin mover el botón de lugar */
     .numpad-btn:active {
-        transform: scale(0.94);
+        background-color: #cbd5e1 !important;
+        color: #0f172a !important;
     }
     .action-btn {
         height: 75px;
@@ -84,18 +87,18 @@
 
         <!-- Teclado Numérico -->
         <div class="row g-2">
-            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('1')">1</button></div>
-            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('2')">2</button></div>
-            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('3')">3</button></div>
-            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('4')">4</button></div>
-            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('5')">5</button></div>
-            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('6')">6</button></div>
-            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('7')">7</button></div>
-            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('8')">8</button></div>
-            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('9')">9</button></div>
-            <div class="col-4"><button type="button" class="btn btn-outline-danger w-100 numpad-btn" onclick="clearInput()">C</button></div>
-            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onclick="pressNum('0')">0</button></div>
-            <div class="col-4"><button type="button" class="btn btn-success w-100 numpad-btn" onclick="identifyEmployee()">✔</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onpointerdown="pressNum('1', event)">1</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onpointerdown="pressNum('2', event)">2</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onpointerdown="pressNum('3', event)">3</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onpointerdown="pressNum('4', event)">4</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onpointerdown="pressNum('5', event)">5</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onpointerdown="pressNum('6', event)">6</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onpointerdown="pressNum('7', event)">7</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onpointerdown="pressNum('8', event)">8</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onpointerdown="pressNum('9', event)">9</button></div>
+            <div class="col-4"><button type="button" class="btn btn-outline-danger w-100 numpad-btn" onpointerdown="clearInput(event)">C</button></div>
+            <div class="col-4"><button type="button" class="btn btn-light border w-100 numpad-btn" onpointerdown="pressNum('0', event)">0</button></div>
+            <div class="col-4"><button type="button" class="btn btn-success w-100 numpad-btn" onpointerdown="identifyEmployee(event)">✔</button></div>
         </div>
 
         <!-- Mensaje de Error (Auto-desaparece) -->
@@ -233,17 +236,19 @@
     const input = document.getElementById('inputCode');
     let errorTimer = null;
 
-    function pressNum(num) {
-        soundKeyClick();
-        showError(''); // Oculta error al tocar número
-        input.value += num;
-    }
+        function pressNum(num, e) {
+            if (e) e.preventDefault(); // Elimina el retraso táctil del navegador
+            soundKeyClick();
+            showError('');
+            input.value += num;
+        }
 
-    function clearInput() {
-        soundKeyClick();
-        showError('');
-        input.value = '';
-    }
+        function clearInput(e) {
+            if (e) e.preventDefault();
+            soundKeyClick();
+            showError('');
+            input.value = '';
+        }
 
     function showError(msg) {
         clearTimeout(errorTimer);
@@ -266,7 +271,8 @@
     let countdownTimer = null;
 
     // 5. IDENTIFICAR EMPLEADO
-    async function identifyEmployee() {
+    async function identifyEmployee(e) {
+        if (e) e.preventDefault();
         const code = input.value.trim();
         if (!code) return;
 
