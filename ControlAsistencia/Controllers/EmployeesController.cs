@@ -97,7 +97,8 @@ namespace ControlAsistencia.Controllers
                     existing.CardCode = employee.CardCode;
                     existing.Pin = employee.Pin;
                     existing.IsActive = employee.IsActive;
-                    existing.HasUnifiedLunch = employee.HasUnifiedLunch; 
+                    existing.HasUnifiedLunch = employee.HasUnifiedLunch;
+                    existing.BirthDate = employee.BirthDate;
 
                     await _context.SaveChangesAsync();
                     TempData["SuccessMessage"] = "Datos del empleado actualizados con éxito.";

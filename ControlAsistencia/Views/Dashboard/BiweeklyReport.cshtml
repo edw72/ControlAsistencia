@@ -89,7 +89,8 @@
                     <th>Almuerzo Real</th>
                     <th>Diligencias</th>
                     <th>Total Descuento</th>
-                    <th>Horas Extras</th>
+                    <th>Extras Ord.</th>
+                    <th>Extras Dom/Fer.</th>
                     <th>Efectivas</th>
                 </tr>
             </thead>
@@ -180,19 +181,26 @@
                                     <span class="text-muted">0m</span>
                                 }
                             </td>
-
-                            <!-- Horas Extras: Solo texto verde -->
                             <td>
-                                @if (d.OvertimeMinutes > 0)
+                                @if (d.RegularOvertimeMinutes > 0)
                                 {
-                                    <span class="text-success fw-bold">+@((d.OvertimeMinutes / 60))h @((d.OvertimeMinutes % 60))m</span>
+                                    <span class="text-success fw-bold">+@((d.RegularOvertimeMinutes / 60))h @((d.RegularOvertimeMinutes % 60))m</span>
                                 }
                                 else
                                 {
                                     <span class="text-muted">0m</span>
                                 }
                             </td>
-
+                            <td>
+                                @if (d.HolidayOvertimeMinutes > 0)
+                                {
+                                    <span class="text-primary fw-bold">+@((d.HolidayOvertimeMinutes / 60))h @((d.HolidayOvertimeMinutes % 60))m</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">0m</span>
+                                }
+                            </td>
                             <td class="fw-semibold">@d.EffectiveHours</td>
                         </tr>
                     }
@@ -215,8 +223,11 @@
             </div>
             <div class="col-md-6 ps-md-4">
                 <span class="text-muted small fw-bold">RESUMEN DE TIEMPO EXTRA LABORADO:</span>
-                <p class="mb-1 text-muted small">Ingresos anticipados fuera de cortesía + Tiempo posterior al turno</p>
-                <h5 class="fw-bold text-success mb-0 mt-3">TOTAL HORAS EXTRAS: @Model.FormattedTotalOvertime</h5>
+                <ul class="list-unstyled mb-2 mt-1 small">
+                    <li>⏱ Extras Ordinarias (L-S fuera de turno): <span class="text-success fw-bold">@Model.FormattedRegularOvertime</span></li>
+                    <li>🎉 Extras Domingos y Feriados (100%): <span class="text-primary fw-bold">@Model.FormattedHolidayOvertime</span></li>
+                </ul>
+                <h5 class="fw-bold text-success mb-0 mt-3">TOTAL EXTRAS ORDINARIAS A PAGAR: @Model.FormattedRegularOvertime</h5>
             </div>
         </div>
 

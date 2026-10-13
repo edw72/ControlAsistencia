@@ -7,7 +7,7 @@
         public int WorkingCount { get; set; }
         public int CoffeeCount { get; set; }
         public int LunchCount { get; set; }
-        public int PersonalCount { get; set; } // NUEVO: En diligencia
+        public int PersonalCount { get; set; }
         public int OutCount { get; set; }
         public List<EmployeeDailyDetailDto> Employees { get; set; } = new();
     }
@@ -28,30 +28,42 @@
         public int LunchMinutes { get; set; }
         public int ExcessCoffeeMinutes { get; set; }
         public int ExcessLunchMinutes { get; set; }
+        public int PersonalErrandMinutes { get; set; }
+
+        public int EarlyDepartureMinutes { get; set; }
+        public bool IsEarlyDepartureWaived { get; set; }
+        public string? EarlyDepartureReason { get; set; }
+
         public bool HasUnifiedLunch { get; set; }
         public int AllowedLunchMinutes => HasUnifiedLunch ? 60 : 45;
 
-        // NUEVO: Tiempo total acumulado en diligencias personales (100% descontable)
-        public int PersonalErrandMinutes { get; set; }
+        public bool IsBirthdayDayOff { get; set; }
 
-        // TOTAL A DEDUCIR: Tardanza + Exceso café + Exceso almuerzo + 100% Diligencias + salidas tempranas (si no fueron perdonadas)
-        public int TotalExcessMinutes => LateMinutes + (IsEarlyDepartureWaived ? 0 : EarlyDepartureMinutes) + ExcessCoffeeMinutes + ExcessLunchMinutes + PersonalErrandMinutes;
+        public int TotalExcessMinutes => LateMinutes
+            + (IsEarlyDepartureWaived ? 0 : EarlyDepartureMinutes)
+            + ExcessCoffeeMinutes
+            + ExcessLunchMinutes
+            + PersonalErrandMinutes;
 
+        // HORAS EXTRAS (Generales y Separadas para compatibilidad)
         public int OvertimeMinutes { get; set; }
+        public int RegularOvertimeMinutes { get; set; }
+        public int HolidayOvertimeMinutes { get; set; }
+        public int TotalOvertimeMinutes => OvertimeMinutes > 0 ? OvertimeMinutes : (RegularOvertimeMinutes + HolidayOvertimeMinutes);
+
         public string FormattedOvertime => OvertimeMinutes > 0
-            ? $"{(OvertimeMinutes / 60)}h {(OvertimeMinutes % 60)}m"
-            : "0m";
+            ? $"{(OvertimeMinutes / 60)}h {(OvertimeMinutes % 60)}m" : "0m";
+
+        public string FormattedRegularOvertime => RegularOvertimeMinutes > 0
+            ? $"{(RegularOvertimeMinutes / 60)}h {(RegularOvertimeMinutes % 60)}m" : "0m";
+
+        public string FormattedHolidayOvertime => HolidayOvertimeMinutes > 0
+            ? $"{(HolidayOvertimeMinutes / 60)}h {(HolidayOvertimeMinutes % 60)}m" : "0m";
 
         public string NetWorkingHours { get; set; } = "0h 0m";
 
-        // Novedad o justificación del día (si la hubiera)
         public string? TodayIncidentCategory { get; set; }
         public string? TodayIncidentDetail { get; set; }
-
-        // Salida Anticipada
-        public int EarlyDepartureMinutes { get; set; }
-        public bool IsEarlyDepartureWaived { get; set; } // ¿Perdonada por supervisor?
-        public string? EarlyDepartureReason { get; set; }
     }
 
     public class BiweeklyReportViewModel
@@ -62,23 +74,34 @@
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
         public string PeriodTitle { get; set; } = string.Empty;
-        
+
+        public bool HasUnifiedLunch { get; set; }
+        public int AllowedLunchMinutes => HasUnifiedLunch ? 60 : 45;
+
         public List<DailyReportRow> Days { get; set; } = new();
 
         public int TotalLateMinutes { get; set; }
-        public int TotalEarlyDepartureMinutes { get; set; } // <-- Salidas anticipadas
+        public int TotalEarlyDepartureMinutes { get; set; }
         public int TotalExcessCoffeeMinutes { get; set; }
         public int TotalExcessLunchMinutes { get; set; }
-        public int TotalPersonalErrandMinutes { get; set; } // NUEVO: Acumulado diligencias
-        public bool HasUnifiedLunch { get; set; }
-        public int AllowedLunchMinutes => HasUnifiedLunch ? 60 : 45;
-                
-        public int GrandTotalExcessMinutes => TotalLateMinutes + TotalEarlyDepartureMinutes + TotalExcessCoffeeMinutes + TotalExcessLunchMinutes + TotalPersonalErrandMinutes;
+        public int TotalPersonalErrandMinutes { get; set; }
+
+        public int GrandTotalExcessMinutes => TotalLateMinutes
+            + TotalEarlyDepartureMinutes
+            + TotalExcessCoffeeMinutes
+            + TotalExcessLunchMinutes
+            + TotalPersonalErrandMinutes;
+
         public string FormattedTotalExcess => $"{(GrandTotalExcessMinutes / 60)}h {(GrandTotalExcessMinutes % 60)}m ({GrandTotalExcessMinutes} min totales a descontar)";
 
+        // TOTALES DE HORAS EXTRAS (Permite asignación directa)
+        public int TotalRegularOvertimeMinutes { get; set; }
+        public int TotalHolidayOvertimeMinutes { get; set; }
         public int GrandTotalOvertimeMinutes { get; set; }
+
+        public string FormattedRegularOvertime => $"{(TotalRegularOvertimeMinutes / 60)}h {(TotalRegularOvertimeMinutes % 60)}m ({TotalRegularOvertimeMinutes} min)";
+        public string FormattedHolidayOvertime => $"{(TotalHolidayOvertimeMinutes / 60)}h {(TotalHolidayOvertimeMinutes % 60)}m ({TotalHolidayOvertimeMinutes} min)";
         public string FormattedTotalOvertime => $"{(GrandTotalOvertimeMinutes / 60)}h {(GrandTotalOvertimeMinutes % 60)}m ({GrandTotalOvertimeMinutes} min a pagar)";
-      
     }
 
     public class DailyReportRow
@@ -87,13 +110,19 @@
         public string ClockIn { get; set; } = "--:--";
         public string ClockOut { get; set; } = "--:--";
         public int LateMinutes { get; set; }
-        public int CoffeeMinutes { get; set; }
-        public int LunchMinutes { get; set; }
-        public int PersonalErrandMinutes { get; set; } // NUEVO
-        public int ExcessMinutes { get; set; }
-        public int OvertimeMinutes { get; set; }
-        public string EffectiveHours { get; set; } = "0h 0m";
         public int EarlyDepartureMinutes { get; set; }
         public bool IsEarlyDepartureWaived { get; set; }
+        public int CoffeeMinutes { get; set; }
+        public int LunchMinutes { get; set; }
+        public int PersonalErrandMinutes { get; set; }
+        public int ExcessMinutes { get; set; }
+
+        // Horas extras compatibles
+        public int OvertimeMinutes { get; set; }
+        public int RegularOvertimeMinutes { get; set; }
+        public int HolidayOvertimeMinutes { get; set; }
+
+        public bool IsBirthdayDayOff { get; set; }
+        public string EffectiveHours { get; set; } = "0h 0m";
     }
 }

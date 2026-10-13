@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using Microsoft.EntityFrameworkCore.Migrations;
+using System.ComponentModel.DataAnnotations;
 
 namespace ControlAsistencia.Models
 {
@@ -28,6 +29,10 @@ namespace ControlAsistencia.Models
 
         [Display(Name = "Pausa Unificada (60 min Almuerzo - Sin Café)")]
         public bool HasUnifiedLunch { get; set; } = false;
+
+        [Display(Name = "Fecha de Cumpleaños")]
+        [DataType(DataType.Date)]
+        public DateTime? BirthDate { get; set; }
 
         // Relación: Un empleado tiene muchas marcas de tiempo
         public ICollection<TimeRecord> TimeRecords { get; set; } = new List<TimeRecord>();

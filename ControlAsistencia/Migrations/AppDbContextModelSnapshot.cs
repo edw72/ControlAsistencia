@@ -63,6 +63,9 @@ namespace ControlAsistencia.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<DateTime?>("BirthDate")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("CardCode")
                         .IsRequired()
                         .HasMaxLength(50)
