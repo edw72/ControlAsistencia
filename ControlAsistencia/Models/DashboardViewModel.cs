@@ -94,14 +94,18 @@
 
         public string FormattedTotalExcess => $"{(GrandTotalExcessMinutes / 60)}h {(GrandTotalExcessMinutes % 60)}m ({GrandTotalExcessMinutes} min totales a descontar)";
 
-        // TOTALES DE HORAS EXTRAS (Permite asignación directa)
+        // TOTALES DE HORAS EXTRAS
         public int TotalRegularOvertimeMinutes { get; set; }
         public int TotalHolidayOvertimeMinutes { get; set; }
-        public int GrandTotalOvertimeMinutes { get; set; }
+
+        // REGLA: El gran total a pagar en nómina toma ÚNICAMENTE las horas ordinarias
+        // (los feriados y domingos se liquidan y pagan el mismo día)
+        public int GrandTotalOvertimeMinutes => TotalRegularOvertimeMinutes;
 
         public string FormattedRegularOvertime => $"{(TotalRegularOvertimeMinutes / 60)}h {(TotalRegularOvertimeMinutes % 60)}m ({TotalRegularOvertimeMinutes} min)";
         public string FormattedHolidayOvertime => $"{(TotalHolidayOvertimeMinutes / 60)}h {(TotalHolidayOvertimeMinutes % 60)}m ({TotalHolidayOvertimeMinutes} min)";
-        public string FormattedTotalOvertime => $"{(GrandTotalOvertimeMinutes / 60)}h {(GrandTotalOvertimeMinutes % 60)}m ({GrandTotalOvertimeMinutes} min a pagar)";
+        public string FormattedTotalOvertime => $"{(GrandTotalOvertimeMinutes / 60)}h {(GrandTotalOvertimeMinutes % 60)}m ({GrandTotalOvertimeMinutes} min a pagar en nómina)";
+
     }
 
     public class DailyReportRow

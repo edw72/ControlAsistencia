@@ -22,6 +22,22 @@
 </style>
 
 <div class="container py-4">
+    <div class="container py-4">
+        <!-- MENSAJES DE ESTADO DE ENVÍO -->
+        @if (TempData["SuccessMessage"] != null)
+        {
+            <div class="alert alert-success alert-dismissible fade show rounded-3 shadow-sm mb-4" role="alert">
+                ✔ @TempData["SuccessMessage"]
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        }
+        @if (TempData["ErrorMessage"] != null)
+        {
+            <div class="alert alert-danger alert-dismissible fade show rounded-3 shadow-sm mb-4" role="alert">
+                ⚠️ @TempData["ErrorMessage"]
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        }
     <!-- Barra de Filtros -->
     <div class="d-flex justify-content-between align-items-center mb-4 no-print gap-3 flex-wrap">
         <a asp-action="Index" class="btn btn-outline-secondary">⬅ Volver al Panel</a>
@@ -44,13 +60,24 @@
         </form>
 
         <div class="d-flex gap-2">
+            <form asp-action="SendBiweeklyEmail" method="post" class="d-inline"
+                  onsubmit="return confirm('¿Enviar por correo esta liquidación con el Excel adjunto al colaborador?');">
+                <input type="hidden" name="employeeId" value="@Model.EmployeeId" />
+                <input type="hidden" name="year" value="@ViewBag.SelectedYear" />
+                <input type="hidden" name="month" value="@ViewBag.SelectedMonth" />
+                <input type="hidden" name="quincena" value="@ViewBag.SelectedQuincena" />
+                <button type="submit" class="btn btn-primary fw-bold">
+                    📧 Enviar por Correo
+                </button>
+            </form>
+
             <a asp-action="ExportBiweeklyToExcel"
                asp-route-employeeId="@Model.EmployeeId"
                asp-route-year="@ViewBag.SelectedYear"
                asp-route-month="@ViewBag.SelectedMonth"
                asp-route-quincena="@ViewBag.SelectedQuincena"
                class="btn btn-success fw-bold">
-                📗 Descargar Excel (.xlsx)
+                📗 Descargar Excel
             </a>
             <button onclick="window.print()" class="btn btn-outline-secondary fw-bold">
                 🖨 Imprimir
@@ -221,14 +248,14 @@
                 </ul>
                 <h5 class="fw-bold text-danger mb-0">TOTAL A DEDUCIR: @Model.FormattedTotalExcess</h5>
             </div>
-            <div class="col-md-6 ps-md-4">
-                <span class="text-muted small fw-bold">RESUMEN DE TIEMPO EXTRA LABORADO:</span>
-                <ul class="list-unstyled mb-2 mt-1 small">
-                    <li>⏱ Extras Ordinarias (L-S fuera de turno): <span class="text-success fw-bold">@Model.FormattedRegularOvertime</span></li>
-                    <li>🎉 Extras Domingos y Feriados (100%): <span class="text-primary fw-bold">@Model.FormattedHolidayOvertime</span></li>
-                </ul>
-                <h5 class="fw-bold text-success mb-0 mt-3">TOTAL EXTRAS ORDINARIAS A PAGAR: @Model.FormattedRegularOvertime</h5>
-            </div>
+                <div class="col-md-6 ps-md-4">
+                    <span class="text-muted small fw-bold">RESUMEN DE TIEMPO EXTRA LABORADO:</span>
+                    <ul class="list-unstyled mb-2 mt-1 small">
+                        <li>⏱ Extras Ordinarias (A pagar en nómina): <span class="text-success fw-bold">@Model.FormattedRegularOvertime</span></li>
+                        <li>🎉 Extras Domingos y Feriados (Pagadas en la fecha): <span class="text-primary fw-bold">@Model.FormattedHolidayOvertime</span></li>
+                    </ul>
+                    <h5 class="fw-bold text-success mb-0 mt-3">TOTAL EXTRAS A PAGAR EN NÓMINA: @Model.FormattedTotalOvertime</h5>
+                </div>
         </div>
 
         <!-- Firmas -->

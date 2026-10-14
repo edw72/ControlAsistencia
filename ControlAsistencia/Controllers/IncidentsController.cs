@@ -16,12 +16,31 @@ namespace ControlAsistencia.Controllers
             _context = context;
         }
 
-        // 1. BITÁCORA DE CONSULTA GENERAL (Filtros por empleado, fecha o texto)
+        // 1. BITÁCORA DE CONSULTA GENERAL (Por defecto: Quincena en curso)
         public async Task<IActionResult> Index(int? employeeId, DateTime? fromDate, DateTime? toDate, string? search)
         {
             var query = _context.AttendanceIncidents
                 .Include(i => i.Employee)
                 .AsQueryable();
+
+            // REGLA: Si no se ingresaron fechas, cargar por defecto la quincena en curso
+            if (!fromDate.HasValue && !toDate.HasValue)
+            {
+                var today = DateTime.Today;
+                if (today.Day <= 15)
+                {
+                    // 1ra Quincena (1 al 15)
+                    fromDate = new DateTime(today.Year, today.Month, 1);
+                    toDate = new DateTime(today.Year, today.Month, 15);
+                }
+                else
+                {
+                    // 2da Quincena (16 al fin de mes)
+                    int lastDay = DateTime.DaysInMonth(today.Year, today.Month);
+                    fromDate = new DateTime(today.Year, today.Month, 16);
+                    toDate = new DateTime(today.Year, today.Month, lastDay);
+                }
+            }
 
             if (employeeId.HasValue)
             {

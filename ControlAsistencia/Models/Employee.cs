@@ -34,6 +34,11 @@ namespace ControlAsistencia.Models
         [DataType(DataType.Date)]
         public DateTime? BirthDate { get; set; }
 
+        [EmailAddress(ErrorMessage = "Formato de correo inválido")]
+        [StringLength(100)]
+        [Display(Name = "Correo Electrónico")]
+        public string? Email { get; set; }
+
         // Relación: Un empleado tiene muchas marcas de tiempo
         public ICollection<TimeRecord> TimeRecords { get; set; } = new List<TimeRecord>();
     }

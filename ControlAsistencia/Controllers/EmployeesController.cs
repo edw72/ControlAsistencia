@@ -96,6 +96,7 @@ namespace ControlAsistencia.Controllers
                     existing.FullName = employee.FullName;
                     existing.CardCode = employee.CardCode;
                     existing.Pin = employee.Pin;
+                    existing.Email = employee.Email;
                     existing.IsActive = employee.IsActive;
                     existing.HasUnifiedLunch = employee.HasUnifiedLunch;
                     existing.BirthDate = employee.BirthDate;

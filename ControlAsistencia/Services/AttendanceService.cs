@@ -46,17 +46,35 @@ namespace ControlAsistencia.Services
             if (!birthDate.HasValue) return false;
 
             var bDay = birthDate.Value;
+            int month = bDay.Month;
+            int day = bDay.Day;
 
-            // Si el cumpleaños cae en Domingo, el día libre se traslada al LUNES
-            var birthdayThisYear = new DateTime(checkDate.Year, bDay.Month, bDay.Day);
+            // Manejo seguro por si alguien nació un 29 de febrero en año no bisiesto:
+            if (month == 2 && day == 29 && !DateTime.IsLeapYear(checkDate.Year))
+            {
+                day = 28;
+            }
+
+            DateTime birthdayThisYear;
+            try
+            {
+                // Reconstruye la fecha con el año que se está consultando en el momento
+                birthdayThisYear = new DateTime(checkDate.Year, month, day);
+            }
+            catch
+            {
+                return false;
+            }
+
+            // REGLA: Si el cumpleaños cae en Domingo, el día libre se traslada al LUNES
             if (birthdayThisYear.DayOfWeek == DayOfWeek.Sunday)
             {
                 var grantedMonday = birthdayThisYear.AddDays(1);
                 return checkDate.Date == grantedMonday.Date;
             }
 
-            // Si cae de lunes a sábado, se otorga en la fecha exacta
-            return checkDate.Month == bDay.Month && checkDate.Day == bDay.Day;
+            // Si cae de lunes a sábado, se otorga en el día y mes exacto
+            return checkDate.Date == birthdayThisYear.Date;
         }
 
         public async Task<EmployeeStatusDto?> GetStatusByCodeOrPinAsync(string inputCode)
@@ -701,12 +719,13 @@ namespace ControlAsistencia.Services
             return (int)duration.TotalMinutes;
         }
 
-        // GENERADOR DE EXCEL CON COLUMNAS SEPARADAS
+        // GENERADOR DE EXCEL CON FORMATO VISUAL INTELIGENTE POR COLORES
         public byte[] GenerateBiweeklyExcel(BiweeklyReportViewModel report)
         {
             using var workbook = new XLWorkbook();
             var ws = workbook.Worksheets.Add("Liquidacion");
 
+            // 1. Título y Encabezados Superiores
             ws.Cell("A1").Value = "REPORTE DE ASISTENCIA Y LIQUIDACIÓN DE TIEMPOS";
             ws.Cell("A1").Style.Font.Bold = true;
             ws.Cell("A1").Style.Font.FontSize = 14;
@@ -720,6 +739,7 @@ namespace ControlAsistencia.Services
             ws.Cell("F2").Style.Font.Bold = true;
             ws.Range("F2:L2").Merge();
 
+            // 2. Cabeceras de Columnas
             string[] headers = {
                 "Fecha", "Entrada", "Tardanza (min)", "Salida", "Salida Antic.", "Café (min)",
                 "Almuerzo (min)", "Diligencias (min)", "Total Descuento (min)",
@@ -736,46 +756,127 @@ namespace ControlAsistencia.Services
                 cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
             }
 
+            // Colores corporativos
+            var colorRojo = XLColor.Red;
+            var colorVerde = XLColor.FromHtml("#198754"); // Verde éxito
+            var colorAzul = XLColor.FromHtml("#0D6EFD");  // Azul festivo
+
             int row = 5;
             foreach (var d in report.Days)
             {
+                // Col 1: Fecha
                 ws.Cell(row, 1).Value = d.Date.ToString("ddd dd/MM/yyyy");
+
+                // Col 2: Entrada
                 ws.Cell(row, 2).Value = d.ClockIn;
+
+                // Col 3: Tardanza (EN ROJO SI HUBO TARDANZA)
                 ws.Cell(row, 3).Value = d.LateMinutes;
+                if (d.LateMinutes > 0)
+                {
+                    ws.Cell(row, 3).Style.Font.FontColor = colorRojo;
+                    ws.Cell(row, 3).Style.Font.Bold = true;
+                }
+
+                // Col 4: Salida
                 ws.Cell(row, 4).Value = d.ClockOut;
-                ws.Cell(row, 5).Value = d.IsEarlyDepartureWaived ? "0 (Con goce)" : d.EarlyDepartureMinutes.ToString();
-                ws.Cell(row, 6).Value = d.CoffeeMinutes;
-                ws.Cell(row, 7).Value = d.LunchMinutes;
+
+                // Col 5: Salida Anticipada (EN ROJO SI NO FUE PERDONADA)
+                if (d.EarlyDepartureMinutes > 0)
+                {
+                    if (d.IsEarlyDepartureWaived)
+                    {
+                        ws.Cell(row, 5).Value = "0 (Con goce)";
+                        ws.Cell(row, 5).Style.Font.FontColor = colorVerde;
+                    }
+                    else
+                    {
+                        ws.Cell(row, 5).Value = d.EarlyDepartureMinutes;
+                        ws.Cell(row, 5).Style.Font.FontColor = colorRojo;
+                        ws.Cell(row, 5).Style.Font.Bold = true;
+                    }
+                }
+                else
+                {
+                    ws.Cell(row, 5).Value = 0;
+                }
+
+                // Col 6: Café (EN ROJO Y CON EL EXCESO SI SE PASÓ)
+                int allowedCoffee = (report.HasUnifiedLunch && d.Date.DayOfWeek != DayOfWeek.Saturday) ? 0 : 15;
+                int coffeeExcess = Math.Max(0, d.CoffeeMinutes - allowedCoffee);
+
+                if (coffeeExcess > 0)
+                {
+                    ws.Cell(row, 6).Value = $"{d.CoffeeMinutes} (+{coffeeExcess}m)";
+                    ws.Cell(row, 6).Style.Font.FontColor = colorRojo;
+                    ws.Cell(row, 6).Style.Font.Bold = true;
+                }
+                else
+                {
+                    ws.Cell(row, 6).Value = d.CoffeeMinutes;
+                }
+
+                // Col 7: Almuerzo (EN ROJO Y CON EL EXCESO SI SE PASÓ)
+                int allowedLunch = (report.HasUnifiedLunch && d.Date.DayOfWeek != DayOfWeek.Saturday) ? 60 : 45;
+                int lunchExcess = Math.Max(0, d.LunchMinutes - allowedLunch);
+
+                if (lunchExcess > 0)
+                {
+                    ws.Cell(row, 7).Value = $"{d.LunchMinutes} (+{lunchExcess}m)";
+                    ws.Cell(row, 7).Style.Font.FontColor = colorRojo;
+                    ws.Cell(row, 7).Style.Font.Bold = true;
+                }
+                else
+                {
+                    ws.Cell(row, 7).Value = d.LunchMinutes;
+                }
+
+                // Col 8: Diligencias (EN ROJO SI SALIÓ)
                 ws.Cell(row, 8).Value = d.PersonalErrandMinutes;
+                if (d.PersonalErrandMinutes > 0)
+                {
+                    ws.Cell(row, 8).Style.Font.FontColor = colorRojo;
+                    ws.Cell(row, 8).Style.Font.Bold = true;
+                }
+
+                // Col 9: Total Descuento del día (EN ROJO DESTACADO)
                 ws.Cell(row, 9).Value = d.ExcessMinutes;
-                ws.Cell(row, 10).Value = d.RegularOvertimeMinutes;
-                ws.Cell(row, 11).Value = d.HolidayOvertimeMinutes;
-                ws.Cell(row, 12).Value = d.EffectiveHours;
-
-                ws.Range(row, 1, row, 12).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
-
                 if (d.ExcessMinutes > 0)
                 {
-                    ws.Cell(row, 9).Style.Font.FontColor = XLColor.Red;
+                    ws.Cell(row, 9).Style.Font.FontColor = colorRojo;
                     ws.Cell(row, 9).Style.Font.Bold = true;
                 }
+
+                // Col 10: Extras Ordinarias (EN VERDE)
+                ws.Cell(row, 10).Value = d.RegularOvertimeMinutes;
                 if (d.RegularOvertimeMinutes > 0)
                 {
-                    ws.Cell(row, 10).Style.Font.FontColor = XLColor.Green;
+                    ws.Cell(row, 10).Style.Font.FontColor = colorVerde;
                     ws.Cell(row, 10).Style.Font.Bold = true;
                 }
+
+                // Col 11: Extras Domingos / Feriados (EN AZUL)
+                ws.Cell(row, 11).Value = d.HolidayOvertimeMinutes;
                 if (d.HolidayOvertimeMinutes > 0)
                 {
-                    ws.Cell(row, 11).Style.Font.FontColor = XLColor.Purple;
+                    ws.Cell(row, 11).Style.Font.FontColor = colorAzul;
                     ws.Cell(row, 11).Style.Font.Bold = true;
                 }
+
+                // Col 12: Horas Efectivas
+                ws.Cell(row, 12).Value = d.EffectiveHours;
+
+                // Alineación centrada para toda la fila
+                ws.Range(row, 1, row, 12).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
                 row++;
             }
 
+            // Bordes para toda la tabla de datos
             ws.Range(4, 1, row - 1, 12).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
             ws.Range(4, 1, row - 1, 12).Style.Border.InsideBorder = XLBorderStyleValues.Thin;
 
+            // Bloque inferior de Totales
             row++;
             ws.Cell(row, 1).Value = "DESGLOSE DEDUCCIONES:";
             ws.Cell(row, 1).Style.Font.Bold = true;
@@ -787,22 +888,23 @@ namespace ControlAsistencia.Services
             ws.Cell(row, 1).Style.Font.Bold = true;
             ws.Cell(row, 2).Value = report.FormattedTotalExcess;
             ws.Cell(row, 2).Style.Font.Bold = true;
-            ws.Cell(row, 2).Style.Font.FontColor = XLColor.Red;
+            ws.Cell(row, 2).Style.Font.FontColor = colorRojo;
             ws.Range(row, 2, row, 5).Merge();
 
             ws.Cell(row, 6).Value = "RESUMEN EXTRAS:";
             ws.Cell(row, 6).Style.Font.Bold = true;
-            ws.Cell(row, 7).Value = $"Ordinarias: {report.FormattedRegularOvertime} | Dom/Feriados (100%): {report.FormattedHolidayOvertime}";
+            ws.Cell(row, 7).Value = $"Ordinarias (A pagar en nómina): {report.FormattedRegularOvertime} | Dom/Feriados (Pagado en fecha): {report.FormattedHolidayOvertime}";
             ws.Range(row, 7, row, 12).Merge();
 
             row++;
-            ws.Cell(row, 6).Value = "TOTAL HORAS EXTRAS A PAGAR:";
+            ws.Cell(row, 6).Value = "TOTAL EXTRAS A PAGAR EN NÓMINA:";
             ws.Cell(row, 6).Style.Font.Bold = true;
             ws.Cell(row, 7).Value = report.FormattedTotalOvertime;
             ws.Cell(row, 7).Style.Font.Bold = true;
-            ws.Cell(row, 7).Style.Font.FontColor = XLColor.Green;
+            ws.Cell(row, 7).Style.Font.FontColor = colorVerde;
             ws.Range(row, 7, row, 12).Merge();
 
+            // Auto-ajustar anchos de columnas
             ws.Columns().AdjustToContents();
 
             using var stream = new MemoryStream();

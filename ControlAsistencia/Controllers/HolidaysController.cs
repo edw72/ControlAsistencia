@@ -4,9 +4,9 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
-namespace ControlAsistencia.Controllers
+namespace ControlAsistencia.Web.Controllers
 {
-    [Authorize] // Solo supervisores y administradores
+    [Authorize]
     public class HolidaysController : Controller
     {
         private readonly AppDbContext _context;
@@ -16,7 +16,6 @@ namespace ControlAsistencia.Controllers
             _context = context;
         }
 
-        // Listado de días feriados
         public async Task<IActionResult> Index()
         {
             var holidays = await _context.Holidays
@@ -26,14 +25,14 @@ namespace ControlAsistencia.Controllers
             return View(holidays);
         }
 
-        // Registrar nuevo feriado
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Create(Holiday holiday)
         {
             if (await _context.Holidays.AnyAsync(h => h.Date.Date == holiday.Date.Date))
             {
-                ModelState.AddModelError("Date", "Ya existe un feriado registrado para esta fecha.");
+                TempData["ErrorMessage"] = "Ya existe un feriado registrado para esta fecha.";
+                return RedirectToAction(nameof(Index));
             }
 
             if (ModelState.IsValid)
@@ -44,14 +43,38 @@ namespace ControlAsistencia.Controllers
                 await _context.SaveChangesAsync();
 
                 TempData["SuccessMessage"] = $"Feriado '{holiday.Name}' registrado exitosamente.";
+            }
+
+            return RedirectToAction(nameof(Index));
+        }
+
+        // NUEVA ACCIÓN: EDITAR FECHA O NOMBRE DEL FERIADO
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Edit(int id, DateTime date, string name)
+        {
+            var holiday = await _context.Holidays.FindAsync(id);
+            if (holiday == null) return NotFound();
+
+            // Validar que la nueva fecha no coincida con otro feriado existente
+            if (await _context.Holidays.AnyAsync(h => h.Date.Date == date.Date && h.Id != id))
+            {
+                TempData["ErrorMessage"] = "Ya existe otro feriado registrado en esa misma fecha.";
                 return RedirectToAction(nameof(Index));
             }
 
-            var holidays = await _context.Holidays.OrderBy(h => h.Date).ToListAsync();
-            return View(nameof(Index), holidays);
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                holiday.Date = date.Date;
+                holiday.Name = name.Trim();
+                await _context.SaveChangesAsync();
+
+                TempData["SuccessMessage"] = $"Feriado '{holiday.Name}' actualizado correctamente.";
+            }
+
+            return RedirectToAction(nameof(Index));
         }
 
-        // Eliminar feriado
         [HttpPost]
         [ValidateAntiForgeryToken]
         public async Task<IActionResult> Delete(int id)

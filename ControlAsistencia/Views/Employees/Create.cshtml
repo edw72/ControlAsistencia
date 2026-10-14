@@ -17,6 +17,11 @@
                 <span asp-validation-for="FullName" class="text-danger small"></span>
             </div>
             <div class="mb-3">
+                <label asp-for="Email" class="form-label fw-semibold">Correo Electrónico (Para envío de nómina)</label>
+                <input asp-for="Email" type="email" class="form-control form-control-lg" placeholder="ejemplo@correo.com" />
+                <span asp-validation-for="Email" class="text-danger small"></span>
+            </div>
+            <div class="mb-3">
                 <label asp-for="BirthDate" class="form-label fw-semibold">Fecha de Cumpleaños</label>
                 <input asp-for="BirthDate" type="date" class="form-control form-control-lg" />
                 <small class="text-muted">Si cae domingo, el sistema trasladará el día libre al lunes siguiente automáticamente.</small>

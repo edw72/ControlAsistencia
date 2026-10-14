@@ -39,6 +39,15 @@
             </form>
             <a href="/Kiosk" target="_blank" class="btn btn-outline-primary btn-sm fw-semibold">🖥 Kiosco</a>
             <button class="btn btn-primary btn-sm" onclick="location.reload();">🔄 Actualizar</button>
+            <form asp-action="SendBulkBiweeklyEmails" method="post" class="d-inline"
+                  onsubmit="return confirm('¿Desea enviar las liquidaciones por correo con Excel adjunto a TODOS los colaboradores activos?');">
+                <input type="hidden" name="year" value="@Model.SelectedDate.Year" />
+                <input type="hidden" name="month" value="@Model.SelectedDate.Month" />
+                <input type="hidden" name="quincena" value="@(Model.SelectedDate.Day <= 15 ? 1 : 2)" />
+                <button type="submit" class="btn btn-outline-success btn-sm fw-bold">
+                    📤 Enviar Liquidaciones a Todos (Email)
+                </button>
+            </form>
         </div>
     </div>
 
