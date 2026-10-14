@@ -129,6 +129,25 @@ namespace ControlAsistencia.Controllers
             TempData["SuccessMessage"] = $"Se enviaron exitosamente {successCount} reportes de liquidación con Excel adjunto por correo.";
             return RedirectToAction(nameof(Index));
         }
+
+        // ACCIÓN PARA GENERAR RESPALDO MANUAL INMEDIATO
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> TriggerManualBackup([FromServices] IConfiguration config)
+        {
+            var result = await DailyBackupService.ExecuteBackupProcedureAsync(HttpContext.RequestServices, config);
+
+            if (result.Success)
+            {
+                TempData["SuccessMessage"] = "Respaldo generado y enviado con éxito a tu correo electrónico.";
+            }
+            else
+            {
+                TempData["ErrorMessage"] = result.Message;
+            }
+
+            return RedirectToAction(nameof(Index));
+        }
     }
 
 }
