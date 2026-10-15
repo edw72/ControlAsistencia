@@ -45,8 +45,8 @@
         <form method="get" class="d-flex align-items-center gap-2">
             <input type="hidden" name="employeeId" value="@Model.EmployeeId" />
             <select name="quincena" class="form-select form-select-sm">
-                <option value="1" selected="@(ViewBag.SelectedQuincena == 1)">1ra Quincena (1 al 15)</option>
-                <option value="2" selected="@(ViewBag.SelectedQuincena == 2)">2da Quincena (16 al fin de mes)</option>
+                <option value="1" selected="@(ViewBag.SelectedQuincena == 1)">1ra Quincena (Corte al día 14)</option>
+                <option value="2" selected="@(ViewBag.SelectedQuincena == 2)">2da Quincena (Día 15 al penúltimo día)</option>
             </select>
             <select name="month" class="form-select form-select-sm">
                 @for (int m = 1; m <= 12; m++)

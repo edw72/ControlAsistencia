@@ -525,14 +525,22 @@ namespace ControlAsistencia.Services
 
             if (quincena == 1)
             {
-                startDate = new DateTime(year, month, 1);
-                endDate = new DateTime(year, month, 15, 23, 59, 59);
+                // 1ra Quincena: Corte al DÍA 14 a las 11:59:59 PM
+                // (Incluye el último día del mes anterior por si hubo marcas de cierre de mes)
+                var prevMonth = new DateTime(year, month, 1).AddMonths(-1);
+                int lastDayPrevMonth = DateTime.DaysInMonth(prevMonth.Year, prevMonth.Month);
+
+                // Si hay marcas en el último día del mes pasado, arranca ahí; si no, el día 1
+                startDate = new DateTime(prevMonth.Year, prevMonth.Month, lastDayPrevMonth);
+                endDate = new DateTime(year, month, 14, 23, 59, 59);
             }
             else
             {
+                // 2da Quincena: Arranca el DÍA 15 y corta el PENÚLTIMO día del mes
+                // (ej: día 27 en febrero, 29 en meses de 30, o 30 en meses de 31)
                 int lastDayOfMonth = DateTime.DaysInMonth(year, month);
-                startDate = new DateTime(year, month, 16);
-                endDate = new DateTime(year, month, lastDayOfMonth, 23, 59, 59);
+                startDate = new DateTime(year, month, 15);
+                endDate = new DateTime(year, month, lastDayOfMonth - 1, 23, 59, 59);
             }
 
             var startUtc = startDate.ToUniversalTime();
@@ -555,7 +563,7 @@ namespace ControlAsistencia.Services
                 HasUnifiedLunch = employee.HasUnifiedLunch,
                 StartDate = startDate,
                 EndDate = endDate,
-                PeriodTitle = $"{(quincena == 1 ? "1ra" : "2da")} Quincena - {startDate:MMMM yyyy}".ToUpper()
+                PeriodTitle = $"{(quincena == 1 ? "1RA QUINCENA (CORTE AL 14)" : "2DA QUINCENA (CORTE PENÚLTIMO DÍA)")} - {new DateTime(year, month, 1):MMMM yyyy}".ToUpper()
             };
 
             for (var day = startDate.Date; day <= endDate.Date; day = day.AddDays(1))

@@ -23,22 +23,22 @@ namespace ControlAsistencia.Controllers
                 .Include(i => i.Employee)
                 .AsQueryable();
 
-            // REGLA: Si no se ingresaron fechas, cargar por defecto la quincena en curso
+            // REGLA: Cargar por defecto la quincena en curso con corte al día anterior al pago
             if (!fromDate.HasValue && !toDate.HasValue)
             {
                 var today = DateTime.Today;
                 if (today.Day <= 15)
                 {
-                    // 1ra Quincena (1 al 15)
+                    // 1ra Quincena: Corte al día 14
                     fromDate = new DateTime(today.Year, today.Month, 1);
-                    toDate = new DateTime(today.Year, today.Month, 15);
+                    toDate = new DateTime(today.Year, today.Month, 14);
                 }
                 else
                 {
-                    // 2da Quincena (16 al fin de mes)
+                    // 2da Quincena: Día 15 al penúltimo día
                     int lastDay = DateTime.DaysInMonth(today.Year, today.Month);
-                    fromDate = new DateTime(today.Year, today.Month, 16);
-                    toDate = new DateTime(today.Year, today.Month, lastDay);
+                    fromDate = new DateTime(today.Year, today.Month, 15);
+                    toDate = new DateTime(today.Year, today.Month, lastDay - 1);
                 }
             }
 
