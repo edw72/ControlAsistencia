@@ -487,18 +487,41 @@ namespace ControlAsistencia.Services
                 }
                 else
                 {
-                    // Si no vino: ¿es su cumpleaños pagado?
+                    int shiftTarget = (date.DayOfWeek == DayOfWeek.Saturday) ? 330 : 510;
+
+                    // 1. Cumpleaños
                     if (isBirthday)
                     {
-                        detail.CurrentStatus = "🎂 Libre por Cumpleaños";
+                        detail.CurrentStatus = "🎂 Libre Cumpleaños";
                         detail.StatusBadgeClass = "bg-primary-subtle text-primary border border-primary-subtle";
-                        detail.NetWorkingHours = (date.DayOfWeek == DayOfWeek.Saturday) ? "5h 30m (Día pagado)" : "8h 30m (Día pagado)";
+                        detail.NetWorkingHours = (date.DayOfWeek == DayOfWeek.Saturday) ? "5h 30m (Pagado)" : "8h 30m (Pagado)";
                     }
+                    // 2. Novedad registrada en bitácora para el día de hoy
+                    else if (incident != null)
+                    {
+                        if (incident.WaiveEarlyDeparture) // CON GOCE
+                        {
+                            detail.CurrentStatus = "🟢 Permiso con Goce";
+                            detail.StatusBadgeClass = "bg-success-subtle text-success border border-success-subtle";
+                            detail.NetWorkingHours = (date.DayOfWeek == DayOfWeek.Saturday) ? "5h 30m (Pagado)" : "8h 30m (Pagado)";
+                            detail.IsEarlyDepartureWaived = true;
+                            detail.EarlyDepartureReason = incident.Detail;
+                        }
+                        else // SIN GOCE (Se descuenta el día entero)
+                        {
+                            detail.CurrentStatus = "🔴 Falta sin Goce";
+                            detail.StatusBadgeClass = "bg-danger-subtle text-danger border border-danger-subtle";
+                            detail.EarlyDepartureMinutes = shiftTarget; // Descuenta 510m (8.5h) o 330m (5.5h)
+                            detail.NetWorkingHours = "0h 0m";
+                        }
+                    }
+                    // 3. Domingo o feriado
                     else if (isSpecialDay)
                     {
                         detail.CurrentStatus = "Día Libre / Feriado";
                         detail.StatusBadgeClass = "bg-light text-muted border";
                     }
+                    // 4. Ausente ordinario
                     else
                     {
                         detail.CurrentStatus = "Sin Ingreso";
@@ -574,21 +597,61 @@ namespace ControlAsistencia.Services
                 var dayRecs = records.Where(r => r.TimestampUtc >= dayStartUtc && r.TimestampUtc <= dayEndUtc).ToList();
                 bool isBirthday = CheckIfBirthdayApplies(employee.BirthDate, day.Date);
 
-                // Si no vino, pero es su día de cumpleaños:
+                // EVALUACIÓN DE DÍAS SIN MARCAS (CUMPLEAÑOS, PERMISOS CON O SIN GOCE)
                 if (!dayRecs.Any())
                 {
+                    int shiftTarget = (day.DayOfWeek == DayOfWeek.Saturday) ? 330 : 510;
+                    string shiftHoursStr = (day.DayOfWeek == DayOfWeek.Saturday) ? "5h 30m" : "8h 30m";
+
+                    // Caso A: Cumpleaños
                     if (isBirthday)
                     {
-                        string normalPaid = (day.DayOfWeek == DayOfWeek.Saturday) ? "5h 30m" : "8h 30m";
                         report.Days.Add(new DailyReportRow
                         {
                             Date = day,
                             ClockIn = "🎂 CUMPLEAÑOS",
                             ClockOut = "DÍA PAGADO",
                             IsBirthdayDayOff = true,
-                            EffectiveHours = $"{normalPaid} (Beneficio)"
+                            EffectiveHours = $"{shiftHoursStr} (Beneficio)"
                         });
+                        continue;
                     }
+
+                    // Caso B: Revisar si hubo novedad registrada en bitácora
+                    var dayIncident = await _context.AttendanceIncidents
+                        .FirstOrDefaultAsync(i => i.EmployeeId == employeeId && i.Date == day.Date);
+
+                    if (dayIncident != null)
+                    {
+                        if (dayIncident.WaiveEarlyDeparture) // CON GOCE DE SUELDO
+                        {
+                            report.Days.Add(new DailyReportRow
+                            {
+                                Date = day,
+                                ClockIn = "PERMISO",
+                                ClockOut = "CON GOCE",
+                                IsEarlyDepartureWaived = true,
+                                EffectiveHours = $"{shiftHoursStr} (Pagado)"
+                            });
+                        }
+                        else // SIN GOCE DE SUELDO (Descuenta la jornada completa del día)
+                        {
+                            report.Days.Add(new DailyReportRow
+                            {
+                                Date = day,
+                                ClockIn = "AUSENCIA",
+                                ClockOut = "SIN GOCE",
+                                EarlyDepartureMinutes = shiftTarget,
+                                ExcessMinutes = shiftTarget,
+                                EffectiveHours = "0h 0m"
+                            });
+
+                            report.TotalEarlyDepartureMinutes += shiftTarget;
+                        }
+                        continue;
+                    }
+
+                    // Si es domingo o feriado sin marcas, se ignora normalmente
                     continue;
                 }
 
