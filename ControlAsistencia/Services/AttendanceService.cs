@@ -13,6 +13,8 @@ namespace ControlAsistencia.Services
         public RecordType? LastRecordType { get; set; }
         public DateTime? LastRecordTimeLocal { get; set; }
         public List<RecordType> AllowedActions { get; set; } = new();
+        public bool HasPendingPreviousShift { get; set; }
+        public string? PendingShiftDateText { get; set; }
     }
 
     public class PunchResult
@@ -114,6 +116,24 @@ namespace ControlAsistencia.Services
                 .ToListAsync();
 
             var lastRecord = recentRecords.FirstOrDefault();
+            // VERIFICACIÓN DE TURNO ANTERIOR SIN CERRAR (Olvidó marcar salida ayer o antes)
+            if (lastRecord != null && lastRecord.Type != RecordType.ClockOut)
+            {
+                var lastRecordLocalDate = lastRecord.TimestampUtc.ToLocalTime().Date;
+                if (lastRecordLocalDate < DateTime.Today)
+                {
+                    return new EmployeeStatusDto
+                    {
+                        EmployeeId = employee.Id,
+                        FullName = employee.FullName,
+                        LastRecordType = lastRecord.Type,
+                        LastRecordTimeLocal = lastRecord.TimestampUtc.ToLocalTime(),
+                        HasPendingPreviousShift = true,
+                        PendingShiftDateText = lastRecordLocalDate.ToString("dddd dd/MM/yyyy"),
+                        AllowedActions = new List<RecordType>() // BLOQUEA TODOS LOS BOTONES
+                    };
+                }
+            }
             var today = DateTime.Today;
             bool isHoliday = await IsHolidayAsync(today);
 
@@ -188,21 +208,55 @@ namespace ControlAsistencia.Services
                 return new PunchResult { Success = false, Message = "Empleado inactivo o no encontrado" };
 
             var nowUtc = DateTime.UtcNow;
+
+            // 1. FILTRO ANTI-DOBLE CLIC (Si intentan marcar dos veces en menos de 5 segundos)
+            var recentPunch = await _context.TimeRecords
+                .Where(t => t.EmployeeId == employeeId && t.TimestampUtc >= nowUtc.AddSeconds(-5))
+                .AnyAsync();
+
+            if (recentPunch)
+            {
+                return new PunchResult { Success = false, Message = "Petición duplicada. Por favor espera un momento." };
+            }
+
             var nowLocal = nowUtc.ToLocalTime();
             bool isHoliday = await IsHolidayAsync(nowLocal.Date);
             bool isSpecialDay = nowLocal.DayOfWeek == DayOfWeek.Sunday || isHoliday;
 
-            string? warning = null;
-            string baseMessage = "";
-
             var recentRecords = await _context.TimeRecords
                 .Where(t => t.EmployeeId == employeeId)
                 .OrderByDescending(t => t.TimestampUtc)
-                .Take(10)
+                .Take(15)
                 .ToListAsync();
+
+            var lastClockInIndex = recentRecords.FindIndex(r => r.Type == RecordType.ClockIn);
+            var currentShiftRecords = lastClockInIndex >= 0 ? recentRecords.Take(lastClockInIndex + 1).ToList() : recentRecords;
+
+            // 2. REGLA ESTRICTA DE NO REPETICIÓN (Solo diligencias pueden repetirse)
+            if (type == RecordType.ClockIn && recentRecords.FirstOrDefault()?.Type == RecordType.ClockIn)
+            {
+                return new PunchResult { Success = false, Message = "Ya tienes un turno iniciado." };
+            }
+            if (type == RecordType.CoffeeStart && currentShiftRecords.Any(r => r.Type == RecordType.CoffeeStart))
+            {
+                return new PunchResult { Success = false, Message = "Ya registraste tu café en este turno." };
+            }
+            if (type == RecordType.LunchStart && currentShiftRecords.Any(r => r.Type == RecordType.LunchStart))
+            {
+                return new PunchResult { Success = false, Message = "Ya registraste tu almuerzo en este turno." };
+            }
+            if (type == RecordType.ClockOut && recentRecords.FirstOrDefault()?.Type == RecordType.ClockOut)
+            {
+                return new PunchResult { Success = false, Message = "Tu salida de turno ya fue registrada." };
+            }
+
+            // 3. VARIABLES PARA EL SWITCH
+            string? warning = null;
+            string baseMessage = "";
 
             bool isWeekdayNormal = nowLocal.DayOfWeek >= DayOfWeek.Monday && nowLocal.DayOfWeek <= DayOfWeek.Friday && !isHoliday;
             int allowedLunch = (employee.HasUnifiedLunch && isWeekdayNormal) ? 60 : MaxLunchMinutes;
+                      
 
             switch (type)
             {

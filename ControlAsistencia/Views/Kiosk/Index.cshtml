@@ -107,6 +107,19 @@
 
     <!-- ESTADO 2: SELECCIÓN DE ACCIÓN -->
     <div id="panelActions" class="card kiosk-card border-0 p-4 d-none">
+        <!-- ESTADO 2.1: ALERTA DE TURNO ANTERIOR SIN SALIDA -->
+        <div id="panelPendingShift" class="card kiosk-card border-0 p-4 d-none text-center border-danger border-2 shadow-lg">
+            <div style="font-size: 3.5rem;">⚠️</div>
+            <h3 id="pendingEmployeeName" class="text-danger fw-bold mb-2">Nombre Empleado</h3>
+            <h4 class="fw-bold text-dark mb-3">Turno Anterior Sin Cerrar</h4>
+            <div class="alert alert-danger text-start p-3 rounded-3 mb-3">
+                <p class="mb-1 fw-semibold">No registraste tu salida del turno anterior (<span id="pendingDateText"></span>).</p>
+                <p class="mb-0 small text-muted">Por políticas de la empresa, debes presentarte con el <strong>Supervisor / Administrador</strong> para justificar tu salida de ayer y autorizar tu entrada de hoy.</p>
+            </div>
+            <button type="button" class="btn btn-secondary rounded-pill px-4" onclick="resetToIdle()">
+                Entendido (<span id="pendingCountdown">8</span>s)
+            </button>
+        </div>
         <h3 id="employeeName" class="text-primary fw-bold mb-1">Nombre Empleado</h3>
         <p id="lastStatusText" class="text-muted mb-4 small">Última marca: Ninguna</p>
 
@@ -305,10 +318,25 @@
 
     function renderEmployeeActions(emp) {
         currentEmployeeId = emp.employeeId;
+
+        // VERIFICAR SI TIENE UN TURNO ANTERIOR SIN CERRAR
+        if (emp.hasPendingPreviousShift) {
+            soundWarning();
+            document.getElementById('pendingEmployeeName').textContent = emp.fullName;
+            document.getElementById('pendingDateText').textContent = emp.pendingShiftDateText;
+
+            document.getElementById('panelInput').classList.add('d-none');
+            document.getElementById('panelActions').classList.add('d-none');
+            document.getElementById('panelPendingShift').classList.remove('d-none');
+
+            startPendingCountdown(8);
+            return;
+        }
+
         document.getElementById('employeeName').textContent = emp.fullName;
-        
-        let lastInfo = emp.lastRecordType !== null 
-            ? `Último registro: ${emp.lastRecordTimeLocal}` 
+
+        let lastInfo = emp.lastRecordType !== null
+            ? `Último registro: ${emp.lastRecordTimeLocal}`
             : 'Sin registros previos';
         document.getElementById('lastStatusText').textContent = lastInfo;
 
@@ -333,20 +361,35 @@
                 btn.type = 'button';
                 btn.className = `btn ${config.class} action-btn shadow-sm`;
                 btn.textContent = config.text;
-                btn.onclick = () => submitPunch(actionType);
+                btn.onpointerdown = (e) => submitPunch(actionType, e, btn);
                 container.appendChild(btn);
             }
         });
 
         document.getElementById('panelInput').classList.add('d-none');
+        document.getElementById('panelPendingShift').classList.add('d-none');
         document.getElementById('panelActions').classList.remove('d-none');
 
         startCountdown(10);
     }
 
     // 6. REGISTRAR MARCA
-    async function submitPunch(recordType) {
+    // 6. REGISTRAR MARCA CON BLOQUEO INMEDIATO DE BOTONES (ANTI-CLIC MÚLTIPLE)
+    async function submitPunch(recordType, e, clickedBtn) {
+        if (e) e.preventDefault();
         clearInterval(countdownTimer);
+
+        // DESACTIVAR TODOS LOS BOTONES INMEDIATAMENTE AL PRIMER TOQUE
+        const allButtons = document.querySelectorAll('.action-btn');
+        allButtons.forEach(b => {
+            b.disabled = true;
+            b.style.pointerEvents = 'none';
+            b.style.opacity = '0.6';
+        });
+
+        if (clickedBtn) {
+            clickedBtn.textContent = '⏳ Procesando...';
+        }
 
         try {
             const response = await fetch('/Kiosk/Punch', {
@@ -387,6 +430,34 @@
             resetToIdle();
         }
     }
+
+        function resetToIdle() {
+            clearInterval(countdownTimer);
+            currentEmployeeId = 0;
+            clearInput();
+            showError('');
+
+            document.getElementById('panelActions').classList.add('d-none');
+            document.getElementById('panelPendingShift').classList.add('d-none');
+            document.getElementById('panelSuccess').classList.add('d-none');
+            document.getElementById('panelInput').classList.remove('d-none');
+            input.focus();
+        }
+
+        function startPendingCountdown(seconds) {
+            clearInterval(countdownTimer);
+            let timeLeft = seconds;
+            const span = document.getElementById('pendingCountdown');
+            span.textContent = timeLeft;
+
+            countdownTimer = setInterval(() => {
+                timeLeft--;
+                span.textContent = timeLeft;
+                if (timeLeft <= 0) {
+                    resetToIdle();
+                }
+            }, 1000);
+        }
 
     function resetToIdle() {
         clearInterval(countdownTimer);
