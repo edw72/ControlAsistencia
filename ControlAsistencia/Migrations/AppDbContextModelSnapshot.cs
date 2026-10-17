@@ -86,8 +86,16 @@ namespace ControlAsistencia.Migrations
                     b.Property<bool>("HasUnifiedLunch")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("Identification")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER");
+
+                    b.Property<decimal>("MonthlySalary")
+                        .HasColumnType("decimal(18,2)");
 
                     b.Property<string>("Pin")
                         .HasMaxLength(6)

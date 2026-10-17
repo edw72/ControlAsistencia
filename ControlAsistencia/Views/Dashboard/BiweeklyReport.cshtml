@@ -11,12 +11,20 @@
 
         body {
             background: #fff;
-            font-size: 10pt;
+            font-size: 9pt;
         }
 
         .card {
             border: none !important;
             box-shadow: none !important;
+        }
+
+        table {
+            font-size: 8pt !important;
+        }
+
+        th, td {
+            padding: 4px 6px !important;
         }
     }
 </style>
@@ -45,7 +53,7 @@
         <form method="get" class="d-flex align-items-center gap-2">
             <input type="hidden" name="employeeId" value="@Model.EmployeeId" />
             <select name="quincena" class="form-select form-select-sm">
-                <option value="1" selected="@(ViewBag.SelectedQuincena == 1)">1ra Quincena (Corte al día 14)</option>
+                <option value="1" selected="@(ViewBag.SelectedQuincena == 1)">1ra Quincena (Corte al 14)</option>
                 <option value="2" selected="@(ViewBag.SelectedQuincena == 2)">2da Quincena (Día 15 al penúltimo día)</option>
             </select>
             <select name="month" class="form-select form-select-sm">
@@ -100,12 +108,18 @@
             </div>
             <div class="col-5 text-end">
                 <h4 class="fw-bold text-primary mb-1">@Model.FullName</h4>
-                <p class="text-muted mb-0">ID / Carné: <strong>@Model.CardCode</strong></p>
+                <p class="text-muted mb-0">
+                    Cédula: <strong>@(string.IsNullOrWhiteSpace(Model.Identification) ? Model.CardCode : Model.Identification)</strong>
+                    @if (Model.MonthlySalary > 0)
+                    {
+                        <span class="ms-2">| Salario: <strong>₡ @Model.MonthlySalary.ToString("N2")</strong></span>
+                    }
+                </p>
                 <small class="text-muted">@Model.StartDate.ToString("dd/MM/yyyy") al @Model.EndDate.ToString("dd/MM/yyyy")</small>
             </div>
         </div>
 
-        <!-- Tabla Limpia Sin Badges -->
+        <!-- Tabla con Extras Diurnas y Nocturnas Separadas -->
         <table class="table table-bordered align-middle mb-4">
             <thead class="table-light">
                 <tr class="text-center">
@@ -118,8 +132,9 @@
                     <th>Almuerzo Real</th>
                     <th>Diligencias</th>
                     <th>Total Descuento</th>
-                    <th>Extras Ord.</th>
-                    <th>Extras Dom/Fer.</th>
+                    <th>☀️ Extras Diurnas</th>
+                    <th>🌙 Extras Nocturnas</th>
+                    <th>🎉 Extras Dom/Fer.</th>
                     <th>Efectivas</th>
                 </tr>
             </thead>
@@ -127,14 +142,13 @@
                 @if (!Model.Days.Any())
                 {
                     <tr>
-                        <td colspan="12" class="text-center text-muted py-4">No se registran marcas en este periodo.</td>
+                        <td colspan="13" class="text-center text-muted py-4">No se registran marcas en este periodo.</td>
                     </tr>
                 }
                 else
                 {
                     @foreach (var d in Model.Days)
                     {
-                        // Límite de almuerzo inteligente según perfil y día
                         int allowedLunch = (Model.HasUnifiedLunch && d.Date.DayOfWeek != DayOfWeek.Saturday) ? 60 : 45;
                         int allowedCoffee = (Model.HasUnifiedLunch && d.Date.DayOfWeek != DayOfWeek.Saturday) ? 0 : 15;
 
@@ -184,7 +198,7 @@
                                 }
                             </td>
 
-                            <!-- Almuerzo Inteligente (Límite dinámico 60m vs 45m) -->
+                            <!-- Almuerzo -->
                             <td>
                                 <span>@d.LunchMinutes m</span>
                                 @if (d.LunchMinutes > allowedLunch)
@@ -217,11 +231,11 @@
                                 }
                             </td>
 
-                            <!-- Extras Ordinarias -->
+                            <!-- ☀️ EXTRAS DIURNAS (Antes de 7:00 PM) -->
                             <td>
-                                @if (d.RegularOvertimeMinutes > 0)
+                                @if (d.DayOvertimeMinutes > 0)
                                 {
-                                    <span class="text-success fw-bold">+@((d.RegularOvertimeMinutes / 60))h @((d.RegularOvertimeMinutes % 60))m</span>
+                                    <span class="text-success fw-bold">+@((d.DayOvertimeMinutes / 60))h @((d.DayOvertimeMinutes % 60))m</span>
                                 }
                                 else
                                 {
@@ -229,7 +243,19 @@
                                 }
                             </td>
 
-                            <!-- Extras Domingos/Feriados -->
+                            <!-- 🌙 EXTRAS NOCTURNAS (Después de 7:00 PM) -->
+                            <td>
+                                @if (d.NightOvertimeMinutes > 0)
+                                {
+                                    <span class="text-success fw-bold">+@((d.NightOvertimeMinutes / 60))h @((d.NightOvertimeMinutes % 60))m</span>
+                                }
+                                else
+                                {
+                                    <span class="text-muted">0m</span>
+                                }
+                            </td>
+
+                            <!-- 🎉 EXTRAS DOMINGOS / FERIADOS (100% extraordinario) -->
                             <td>
                                 @if (d.HolidayOvertimeMinutes > 0)
                                 {
@@ -259,15 +285,22 @@
                     <li>🍲 Exceso almuerzo (@(Model.HasUnifiedLunch ? ">60 min" : ">45 min")): <span class="text-danger fw-bold">@Model.TotalExcessLunchMinutes min</span></li>
                     <li>🚶 Diligencias personales (100%): <span class="text-danger fw-bold">@Model.TotalPersonalErrandMinutes min</span></li>
                 </ul>
-                <h5 class="fw-bold text-danger mb-0">TOTAL A DEDUCIR: @Model.FormattedTotalExcess</h5>
+                <h5 class="fw-bold text-danger mb-0">
+                    TOTAL A DEDUCIR: @Model.FormattedTotalExcess
+                    @if (Model.DeductionAmount > 0)
+                    {
+                        <span>(₡ @Model.DeductionAmount.ToString("N2"))</span>
+                    }
+                </h5>
             </div>
             <div class="col-md-6 ps-md-4">
                 <span class="text-muted small fw-bold">RESUMEN DE TIEMPO EXTRA LABORADO:</span>
                 <ul class="list-unstyled mb-2 mt-1 small">
-                    <li>⏱ Extras Ordinarias (A pagar en nómina): <span class="text-success fw-bold">@Model.FormattedRegularOvertime</span></li>
+                    <li>☀️ Extras Diurnas (hasta 7pm): <span class="text-success fw-bold">@((Model.TotalDayOvertimeMinutes / 60))h @((Model.TotalDayOvertimeMinutes % 60))m @(Model.DayOvertimeAmount > 0 ? $"(₡ {Model.DayOvertimeAmount:N2})" : "")</span></li>
+                    <li>🌙 Extras Nocturnas (después 7pm): <span class="text-success fw-bold">@((Model.TotalNightOvertimeMinutes / 60))h @((Model.TotalNightOvertimeMinutes % 60))m @(Model.NightOvertimeAmount > 0 ? $"(₡ {Model.NightOvertimeAmount:N2})" : "")</span></li>
                     <li>🎉 Extras Domingos y Feriados (Pagadas en fecha): <span class="text-primary fw-bold">@Model.FormattedHolidayOvertime</span></li>
                 </ul>
-                <h5 class="fw-bold text-success mb-0 mt-3">TOTAL EXTRAS A PAGAR EN NÓMINA: @Model.FormattedTotalOvertime</h5>
+                <h5 class="fw-bold text-success mb-0 mt-3">TOTAL EXTRAS EN NÓMINA: ₡ @Model.TotalOvertimeAmount.ToString("N2")</h5>
             </div>
         </div>
 

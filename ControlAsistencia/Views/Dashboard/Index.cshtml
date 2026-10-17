@@ -68,6 +68,13 @@
                     📤 Enviar Liquidaciones a Todos (Email)
                 </button>
             </form>
+            <a asp-action="ExportHrPayrollExcel"
+               asp-route-year="@Model.SelectedDate.Year"
+               asp-route-month="@Model.SelectedDate.Month"
+               asp-route-quincena="@(Model.SelectedDate.Day <= 15 ? 1 : 2)"
+               class="btn btn-success btn-sm fw-bold">
+                📊 Hoja de Nómina (RRHH)
+            </a>
             <button class="btn btn-primary btn-sm" onclick="location.reload();">🔄 Actualizar</button>
         </div>
     </div>

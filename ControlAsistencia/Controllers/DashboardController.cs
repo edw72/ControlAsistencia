@@ -148,6 +148,20 @@ namespace ControlAsistencia.Controllers
 
             return RedirectToAction(nameof(Index));
         }
+
+        // DESCARGA DE LA SÁBANA CONSOLIDADA DE NÓMINA PARA RECURSOS HUMANOS
+        [HttpGet]
+        public async Task<IActionResult> ExportHrPayrollExcel(int year, int month, int quincena)
+        {
+            var excelBytes = await _attendanceService.GenerateHrPayrollExcelAsync(year, month, quincena);
+            string periodStr = (quincena == 1 ? "1ra_Quincena" : "2da_Quincena");
+            string fileName = $"Nomina_RRHH_{periodStr}_{month}_{year}.xlsx";
+
+            return File(
+                excelBytes,
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                fileName);
+        }
     }
 
 }

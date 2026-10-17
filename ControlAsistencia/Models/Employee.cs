@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore.Migrations;
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace ControlAsistencia.Models
 {
@@ -38,6 +39,14 @@ namespace ControlAsistencia.Models
         [StringLength(100)]
         [Display(Name = "Correo Electrónico")]
         public string? Email { get; set; }
+
+        [StringLength(20)]
+        [Display(Name = "Cédula / Identificación")]
+        public string Identification { get; set; } = string.Empty;
+
+        [Column(TypeName = "decimal(18,2)")]
+        [Display(Name = "Salario Mensual Bruto (₡)")]
+        public decimal MonthlySalary { get; set; } = 0m;
 
         // Relación: Un empleado tiene muchas marcas de tiempo
         public ICollection<TimeRecord> TimeRecords { get; set; } = new List<TimeRecord>();

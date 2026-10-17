@@ -40,7 +40,6 @@ namespace ControlAsistencia.Services
             return await _context.Holidays.AnyAsync(h => h.Date.Date == date.Date);
         }
 
-        // VERIFICACIÓN INTELIGENTE DE DÍA DE CUMPLEAÑOS
         public bool CheckIfBirthdayApplies(DateTime? birthDate, DateTime checkDate)
         {
             if (!birthDate.HasValue) return false;
@@ -49,7 +48,6 @@ namespace ControlAsistencia.Services
             int month = bDay.Month;
             int day = bDay.Day;
 
-            // Manejo seguro por si alguien nació un 29 de febrero en año no bisiesto:
             if (month == 2 && day == 29 && !DateTime.IsLeapYear(checkDate.Year))
             {
                 day = 28;
@@ -58,7 +56,6 @@ namespace ControlAsistencia.Services
             DateTime birthdayThisYear;
             try
             {
-                // Reconstruye la fecha con el año que se está consultando en el momento
                 birthdayThisYear = new DateTime(checkDate.Year, month, day);
             }
             catch
@@ -66,15 +63,39 @@ namespace ControlAsistencia.Services
                 return false;
             }
 
-            // REGLA: Si el cumpleaños cae en Domingo, el día libre se traslada al LUNES
             if (birthdayThisYear.DayOfWeek == DayOfWeek.Sunday)
             {
                 var grantedMonday = birthdayThisYear.AddDays(1);
                 return checkDate.Date == grantedMonday.Date;
             }
 
-            // Si cae de lunes a sábado, se otorga en el día y mes exacto
             return checkDate.Date == birthdayThisYear.Date;
+        }
+
+        // SEGMENTACIÓN EXACTA DE EXTRAS DIURNAS VS NOCTURNAS (CORTE A LAS 7:00 PM)
+        public static (int DayMinutes, int NightMinutes) SplitOvertimeInterval(DateTime start, DateTime end)
+        {
+            if (end <= start) return (0, 0);
+
+            int dayMin = 0;
+            int nightMin = 0;
+
+            // Recorrer minuto a minuto el intervalo de horas extras
+            for (var t = start; t < end; t = t.AddMinutes(1))
+            {
+                var tod = t.TimeOfDay;
+                // Franja Diurna: 05:00 AM a 07:00 PM (19:00)
+                if (tod >= new TimeSpan(5, 0, 0) && tod < new TimeSpan(19, 0, 0))
+                {
+                    dayMin++;
+                }
+                else
+                {
+                    nightMin++;
+                }
+            }
+
+            return (dayMin, nightMin);
         }
 
         public async Task<EmployeeStatusDto?> GetStatusByCodeOrPinAsync(string inputCode)
@@ -329,7 +350,6 @@ namespace ControlAsistencia.Services
                 var incident = dayIncidents.FirstOrDefault(i => i.EmployeeId == emp.Id);
 
                 bool isBirthday = CheckIfBirthdayApplies(emp.BirthDate, date.Date);
-
                 bool isWeekdayNormal = date.DayOfWeek >= DayOfWeek.Monday && date.DayOfWeek <= DayOfWeek.Friday && !isHoliday;
                 bool hasUnifiedToday = emp.HasUnifiedLunch && isWeekdayNormal;
 
@@ -338,6 +358,8 @@ namespace ControlAsistencia.Services
                     EmployeeId = emp.Id,
                     FullName = emp.FullName,
                     CardCode = emp.CardCode,
+                    Identification = emp.Identification,
+                    MonthlySalary = emp.MonthlySalary,
                     HasUnifiedLunch = hasUnifiedToday,
                     IsBirthdayDayOff = isBirthday
                 };
@@ -421,8 +443,9 @@ namespace ControlAsistencia.Services
                             int unpaidBreaks = detail.ExcessCoffeeMinutes + detail.ExcessLunchMinutes + personalMin;
                             int totalExtraMin = (int)Math.Max(0, totalSpan.TotalMinutes - unpaidBreaks);
 
-                            detail.HolidayOvertimeMinutes = totalExtraMin; // 100% EXTRAS DE FERIADO/DOMINGO
-                            detail.RegularOvertimeMinutes = 0;
+                            detail.HolidayOvertimeMinutes = totalExtraMin;
+                            detail.DayOvertimeMinutes = 0;
+                            detail.NightOvertimeMinutes = 0;
                             detail.NetWorkingHours = $"{(totalExtraMin / 60)}h {(totalExtraMin % 60)}m (100% Extra)";
                         }
                         // DÍAS ORDINARIOS:
@@ -430,21 +453,34 @@ namespace ControlAsistencia.Services
                         {
                             detail.LateMinutes = CalculateLateMinutes(localIn, localIn.DayOfWeek);
 
-                            int overtime = 0;
-                            var officialEndTime = (localIn.DayOfWeek == DayOfWeek.Saturday) ? new TimeSpan(12, 30, 0) : new TimeSpan(17, 30, 0);
+                            int totalDayOt = 0;
+                            int totalNightOt = 0;
 
+                            var officialEndTime = (localIn.DayOfWeek == DayOfWeek.Saturday) ? new TimeSpan(12, 30, 0) : new TimeSpan(17, 30, 0);
                             var officialStartTime = (localIn.DayOfWeek == DayOfWeek.Saturday) ? new TimeSpan(7, 0, 0) : new TimeSpan(8, 0, 0);
+
+                            // Extras Temprano (Antes de inicio oficial)
                             if (localIn.TimeOfDay < officialStartTime)
                             {
                                 int earlyMin = (int)(officialStartTime - localIn.TimeOfDay).TotalMinutes;
-                                if (earlyMin > EarlyArrivalGraceMinutes) overtime += earlyMin;
-                            }
-                            if (localOut.HasValue && localOut.Value.TimeOfDay > officialEndTime)
-                            {
-                                overtime += (int)(localOut.Value.TimeOfDay - officialEndTime).TotalMinutes;
+                                if (earlyMin > EarlyArrivalGraceMinutes)
+                                {
+                                    var (dM, nM) = SplitOvertimeInterval(localIn, localIn.Date.Add(officialStartTime));
+                                    totalDayOt += dM;
+                                    totalNightOt += nM;
+                                }
                             }
 
-                            detail.RegularOvertimeMinutes = overtime; // EXTRAS ORDINARIAS
+                            // Extras Tarde (Segmentadas a las 7:00 PM)
+                            if (localOut.HasValue && localOut.Value.TimeOfDay > officialEndTime)
+                            {
+                                var (dM, nM) = SplitOvertimeInterval(localOut.Value.Date.Add(officialEndTime), localOut.Value);
+                                totalDayOt += dM;
+                                totalNightOt += nM;
+                            }
+
+                            detail.DayOvertimeMinutes = totalDayOt;
+                            detail.NightOvertimeMinutes = totalNightOt;
                             detail.HolidayOvertimeMinutes = 0;
 
                             // Salida anticipada justa
@@ -489,17 +525,15 @@ namespace ControlAsistencia.Services
                 {
                     int shiftTarget = (date.DayOfWeek == DayOfWeek.Saturday) ? 330 : 510;
 
-                    // 1. Cumpleaños
                     if (isBirthday)
                     {
                         detail.CurrentStatus = "🎂 Libre Cumpleaños";
                         detail.StatusBadgeClass = "bg-primary-subtle text-primary border border-primary-subtle";
                         detail.NetWorkingHours = (date.DayOfWeek == DayOfWeek.Saturday) ? "5h 30m (Pagado)" : "8h 30m (Pagado)";
                     }
-                    // 2. Novedad registrada en bitácora para el día de hoy
                     else if (incident != null)
                     {
-                        if (incident.WaiveEarlyDeparture) // CON GOCE
+                        if (incident.WaiveEarlyDeparture)
                         {
                             detail.CurrentStatus = "🟢 Permiso con Goce";
                             detail.StatusBadgeClass = "bg-success-subtle text-success border border-success-subtle";
@@ -507,21 +541,19 @@ namespace ControlAsistencia.Services
                             detail.IsEarlyDepartureWaived = true;
                             detail.EarlyDepartureReason = incident.Detail;
                         }
-                        else // SIN GOCE (Se descuenta el día entero)
+                        else
                         {
                             detail.CurrentStatus = "🔴 Falta sin Goce";
                             detail.StatusBadgeClass = "bg-danger-subtle text-danger border border-danger-subtle";
-                            detail.EarlyDepartureMinutes = shiftTarget; // Descuenta 510m (8.5h) o 330m (5.5h)
+                            detail.EarlyDepartureMinutes = shiftTarget;
                             detail.NetWorkingHours = "0h 0m";
                         }
                     }
-                    // 3. Domingo o feriado
                     else if (isSpecialDay)
                     {
                         detail.CurrentStatus = "Día Libre / Feriado";
                         detail.StatusBadgeClass = "bg-light text-muted border";
                     }
-                    // 4. Ausente ordinario
                     else
                     {
                         detail.CurrentStatus = "Sin Ingreso";
@@ -548,19 +580,13 @@ namespace ControlAsistencia.Services
 
             if (quincena == 1)
             {
-                // 1ra Quincena: Corte al DÍA 14 a las 11:59:59 PM
-                // (Incluye el último día del mes anterior por si hubo marcas de cierre de mes)
                 var prevMonth = new DateTime(year, month, 1).AddMonths(-1);
                 int lastDayPrevMonth = DateTime.DaysInMonth(prevMonth.Year, prevMonth.Month);
-
-                // Si hay marcas en el último día del mes pasado, arranca ahí; si no, el día 1
                 startDate = new DateTime(prevMonth.Year, prevMonth.Month, lastDayPrevMonth);
                 endDate = new DateTime(year, month, 14, 23, 59, 59);
             }
             else
             {
-                // 2da Quincena: Arranca el DÍA 15 y corta el PENÚLTIMO día del mes
-                // (ej: día 27 en febrero, 29 en meses de 30, o 30 en meses de 31)
                 int lastDayOfMonth = DateTime.DaysInMonth(year, month);
                 startDate = new DateTime(year, month, 15);
                 endDate = new DateTime(year, month, lastDayOfMonth - 1, 23, 59, 59);
@@ -583,6 +609,8 @@ namespace ControlAsistencia.Services
                 EmployeeId = employee.Id,
                 FullName = employee.FullName,
                 CardCode = employee.CardCode,
+                Identification = employee.Identification,
+                MonthlySalary = employee.MonthlySalary,
                 HasUnifiedLunch = employee.HasUnifiedLunch,
                 StartDate = startDate,
                 EndDate = endDate,
@@ -597,13 +625,11 @@ namespace ControlAsistencia.Services
                 var dayRecs = records.Where(r => r.TimestampUtc >= dayStartUtc && r.TimestampUtc <= dayEndUtc).ToList();
                 bool isBirthday = CheckIfBirthdayApplies(employee.BirthDate, day.Date);
 
-                // EVALUACIÓN DE DÍAS SIN MARCAS (CUMPLEAÑOS, PERMISOS CON O SIN GOCE)
                 if (!dayRecs.Any())
                 {
                     int shiftTarget = (day.DayOfWeek == DayOfWeek.Saturday) ? 330 : 510;
                     string shiftHoursStr = (day.DayOfWeek == DayOfWeek.Saturday) ? "5h 30m" : "8h 30m";
 
-                    // Caso A: Cumpleaños
                     if (isBirthday)
                     {
                         report.Days.Add(new DailyReportRow
@@ -617,13 +643,12 @@ namespace ControlAsistencia.Services
                         continue;
                     }
 
-                    // Caso B: Revisar si hubo novedad registrada en bitácora
                     var dayIncident = await _context.AttendanceIncidents
                         .FirstOrDefaultAsync(i => i.EmployeeId == employeeId && i.Date == day.Date);
 
                     if (dayIncident != null)
                     {
-                        if (dayIncident.WaiveEarlyDeparture) // CON GOCE DE SUELDO
+                        if (dayIncident.WaiveEarlyDeparture)
                         {
                             report.Days.Add(new DailyReportRow
                             {
@@ -634,7 +659,7 @@ namespace ControlAsistencia.Services
                                 EffectiveHours = $"{shiftHoursStr} (Pagado)"
                             });
                         }
-                        else // SIN GOCE DE SUELDO (Descuenta la jornada completa del día)
+                        else
                         {
                             report.Days.Add(new DailyReportRow
                             {
@@ -651,7 +676,6 @@ namespace ControlAsistencia.Services
                         continue;
                     }
 
-                    // Si es domingo o feriado sin marcas, se ignora normalmente
                     continue;
                 }
 
@@ -676,7 +700,8 @@ namespace ControlAsistencia.Services
                 int lateMin = 0;
                 int earlyDepMin = 0;
                 bool isWaived = false;
-                int regOvertime = 0;
+                int dayOt = 0;
+                int nightOt = 0;
                 int holOvertime = 0;
                 string effHours = "0h 0m";
 
@@ -701,16 +726,27 @@ namespace ControlAsistencia.Services
                         var officialStart = (localIn.DayOfWeek == DayOfWeek.Saturday) ? new TimeSpan(7, 0, 0) : new TimeSpan(8, 0, 0);
                         var officialEnd = (day.DayOfWeek == DayOfWeek.Saturday) ? new TimeSpan(12, 30, 0) : new TimeSpan(17, 30, 0);
 
+                        // Temprano
                         if (localIn.TimeOfDay < officialStart)
                         {
                             int earlyM = (int)(officialStart - localIn.TimeOfDay).TotalMinutes;
-                            if (earlyM > EarlyArrivalGraceMinutes) regOvertime += earlyM;
-                        }
-                        if (localOut.TimeOfDay > officialEnd)
-                        {
-                            regOvertime += (int)(localOut.TimeOfDay - officialEnd).TotalMinutes;
+                            if (earlyM > EarlyArrivalGraceMinutes)
+                            {
+                                var (dM, nM) = SplitOvertimeInterval(localIn, localIn.Date.Add(officialStart));
+                                dayOt += dM;
+                                nightOt += nM;
+                            }
                         }
 
+                        // Tarde (Segmentada a las 7:00 PM)
+                        if (localOut.TimeOfDay > officialEnd)
+                        {
+                            var (dM, nM) = SplitOvertimeInterval(localOut.Date.Add(officialEnd), localOut);
+                            dayOt += dM;
+                            nightOt += nM;
+                        }
+
+                        // Salida anticipada
                         if (localOut.TimeOfDay < officialEnd)
                         {
                             int remClock = (int)(officialEnd - localOut.TimeOfDay).TotalMinutes;
@@ -750,7 +786,8 @@ namespace ControlAsistencia.Services
                     LunchMinutes = lunch,
                     PersonalErrandMinutes = personal,
                     ExcessMinutes = totalDayDeduction,
-                    RegularOvertimeMinutes = regOvertime,
+                    DayOvertimeMinutes = dayOt,
+                    NightOvertimeMinutes = nightOt,
                     HolidayOvertimeMinutes = holOvertime,
                     EffectiveHours = effHours
                 });
@@ -761,7 +798,8 @@ namespace ControlAsistencia.Services
                 report.TotalExcessLunchMinutes += excessLunch;
                 report.TotalPersonalErrandMinutes += personal;
 
-                report.TotalRegularOvertimeMinutes += regOvertime;
+                report.TotalDayOvertimeMinutes += dayOt;
+                report.TotalNightOvertimeMinutes += nightOt;
                 report.TotalHolidayOvertimeMinutes += holOvertime;
             }
 
@@ -790,31 +828,29 @@ namespace ControlAsistencia.Services
             return (int)duration.TotalMinutes;
         }
 
-        // GENERADOR DE EXCEL CON FORMATO VISUAL INTELIGENTE POR COLORES
+        // 3. EXCEL INDIVIDUAL DE LA QUINCENA
         public byte[] GenerateBiweeklyExcel(BiweeklyReportViewModel report)
         {
             using var workbook = new XLWorkbook();
             var ws = workbook.Worksheets.Add("Liquidacion");
 
-            // 1. Título y Encabezados Superiores
             ws.Cell("A1").Value = "REPORTE DE ASISTENCIA Y LIQUIDACIÓN DE TIEMPOS";
             ws.Cell("A1").Style.Font.Bold = true;
             ws.Cell("A1").Style.Font.FontSize = 14;
-            ws.Range("A1:L1").Merge();
+            ws.Range("A1:M1").Merge();
 
-            ws.Cell("A2").Value = $"Colaborador: {report.FullName} (ID: {report.CardCode})";
+            ws.Cell("A2").Value = $"Colaborador: {report.FullName} (Cédula: {report.Identification})";
             ws.Cell("A2").Style.Font.Bold = true;
             ws.Range("A2:E2").Merge();
 
             ws.Cell("F2").Value = $"Periodo: {report.PeriodTitle} ({report.StartDate:dd/MM/yyyy} al {report.EndDate:dd/MM/yyyy})";
             ws.Cell("F2").Style.Font.Bold = true;
-            ws.Range("F2:L2").Merge();
+            ws.Range("F2:M2").Merge();
 
-            // 2. Cabeceras de Columnas
             string[] headers = {
                 "Fecha", "Entrada", "Tardanza (min)", "Salida", "Salida Antic.", "Café (min)",
                 "Almuerzo (min)", "Diligencias (min)", "Total Descuento (min)",
-                "Extras Ord. (min)", "Extras Dom/Fer (min)", "Horas Efectivas"
+                "Extras Diurnas (min)", "Extras Nocturnas (min)", "Extras Dom/Fer (min)", "Horas Efectivas"
             };
 
             for (int i = 0; i < headers.Length; i++)
@@ -827,32 +863,21 @@ namespace ControlAsistencia.Services
                 cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
             }
 
-            // Colores corporativos
             var colorRojo = XLColor.Red;
-            var colorVerde = XLColor.FromHtml("#198754"); // Verde éxito
-            var colorAzul = XLColor.FromHtml("#0D6EFD");  // Azul festivo
+            var colorVerde = XLColor.FromHtml("#198754");
+            var colorAzul = XLColor.FromHtml("#0D6EFD");
 
             int row = 5;
             foreach (var d in report.Days)
             {
-                // Col 1: Fecha
                 ws.Cell(row, 1).Value = d.Date.ToString("ddd dd/MM/yyyy");
-
-                // Col 2: Entrada
                 ws.Cell(row, 2).Value = d.ClockIn;
 
-                // Col 3: Tardanza (EN ROJO SI HUBO TARDANZA)
                 ws.Cell(row, 3).Value = d.LateMinutes;
-                if (d.LateMinutes > 0)
-                {
-                    ws.Cell(row, 3).Style.Font.FontColor = colorRojo;
-                    ws.Cell(row, 3).Style.Font.Bold = true;
-                }
+                if (d.LateMinutes > 0) { ws.Cell(row, 3).Style.Font.FontColor = colorRojo; ws.Cell(row, 3).Style.Font.Bold = true; }
 
-                // Col 4: Salida
                 ws.Cell(row, 4).Value = d.ClockOut;
 
-                // Col 5: Salida Anticipada (EN ROJO SI NO FUE PERDONADA)
                 if (d.EarlyDepartureMinutes > 0)
                 {
                     if (d.IsEarlyDepartureWaived)
@@ -867,115 +892,184 @@ namespace ControlAsistencia.Services
                         ws.Cell(row, 5).Style.Font.Bold = true;
                     }
                 }
-                else
-                {
-                    ws.Cell(row, 5).Value = 0;
-                }
+                else { ws.Cell(row, 5).Value = 0; }
 
-                // Col 6: Café (EN ROJO Y CON EL EXCESO SI SE PASÓ)
                 int allowedCoffee = (report.HasUnifiedLunch && d.Date.DayOfWeek != DayOfWeek.Saturday) ? 0 : 15;
                 int coffeeExcess = Math.Max(0, d.CoffeeMinutes - allowedCoffee);
-
                 if (coffeeExcess > 0)
                 {
                     ws.Cell(row, 6).Value = $"{d.CoffeeMinutes} (+{coffeeExcess}m)";
                     ws.Cell(row, 6).Style.Font.FontColor = colorRojo;
                     ws.Cell(row, 6).Style.Font.Bold = true;
                 }
-                else
-                {
-                    ws.Cell(row, 6).Value = d.CoffeeMinutes;
-                }
+                else { ws.Cell(row, 6).Value = d.CoffeeMinutes; }
 
-                // Col 7: Almuerzo (EN ROJO Y CON EL EXCESO SI SE PASÓ)
                 int allowedLunch = (report.HasUnifiedLunch && d.Date.DayOfWeek != DayOfWeek.Saturday) ? 60 : 45;
                 int lunchExcess = Math.Max(0, d.LunchMinutes - allowedLunch);
-
                 if (lunchExcess > 0)
                 {
                     ws.Cell(row, 7).Value = $"{d.LunchMinutes} (+{lunchExcess}m)";
                     ws.Cell(row, 7).Style.Font.FontColor = colorRojo;
                     ws.Cell(row, 7).Style.Font.Bold = true;
                 }
-                else
-                {
-                    ws.Cell(row, 7).Value = d.LunchMinutes;
-                }
+                else { ws.Cell(row, 7).Value = d.LunchMinutes; }
 
-                // Col 8: Diligencias (EN ROJO SI SALIÓ)
                 ws.Cell(row, 8).Value = d.PersonalErrandMinutes;
-                if (d.PersonalErrandMinutes > 0)
+                if (d.PersonalErrandMinutes > 0) { ws.Cell(row, 8).Style.Font.FontColor = colorRojo; ws.Cell(row, 8).Style.Font.Bold = true; }
+
+                ws.Cell(row, 9).Value = d.ExcessMinutes;
+                if (d.ExcessMinutes > 0) { ws.Cell(row, 9).Style.Font.FontColor = colorRojo; ws.Cell(row, 9).Style.Font.Bold = true; }
+
+                ws.Cell(row, 10).Value = d.DayOvertimeMinutes;
+                if (d.DayOvertimeMinutes > 0) { ws.Cell(row, 10).Style.Font.FontColor = colorVerde; ws.Cell(row, 10).Style.Font.Bold = true; }
+
+                ws.Cell(row, 11).Value = d.NightOvertimeMinutes;
+                if (d.NightOvertimeMinutes > 0) { ws.Cell(row, 11).Style.Font.FontColor = colorVerde; ws.Cell(row, 11).Style.Font.Bold = true; }
+
+                ws.Cell(row, 12).Value = d.HolidayOvertimeMinutes;
+                if (d.HolidayOvertimeMinutes > 0) { ws.Cell(row, 12).Style.Font.FontColor = colorAzul; ws.Cell(row, 12).Style.Font.Bold = true; }
+
+                ws.Cell(row, 13).Value = d.EffectiveHours;
+
+                ws.Range(row, 1, row, 13).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                row++;
+            }
+
+            ws.Range(4, 1, row - 1, 13).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            ws.Range(4, 1, row - 1, 13).Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+
+            // Bloque Resumen
+            row++;
+            ws.Cell(row, 1).Value = "DESGLOSE DEDUCCIONES:";
+            ws.Cell(row, 1).Style.Font.Bold = true;
+            ws.Cell(row, 2).Value = $"Tardanzas: {report.TotalLateMinutes}m | Salidas anticipadas: {report.TotalEarlyDepartureMinutes}m | Café: {report.TotalExcessCoffeeMinutes}m | Almuerzo: {report.TotalExcessLunchMinutes}m | Diligencias: {report.TotalPersonalErrandMinutes}m";
+            ws.Range(row, 2, row, 13).Merge();
+
+            row++;
+            ws.Cell(row, 1).Value = "TOTAL DEDUCCIÓN:";
+            ws.Cell(row, 1).Style.Font.Bold = true;
+            ws.Cell(row, 2).Value = $"{report.FormattedTotalExcess}  ==>  Monto: ₡ {report.DeductionAmount:N2}";
+            ws.Cell(row, 2).Style.Font.Bold = true;
+            ws.Cell(row, 2).Style.Font.FontColor = colorRojo;
+            ws.Range(row, 2, row, 6).Merge();
+
+            ws.Cell(row, 7).Value = "TOTAL EXTRAS EN NÓMINA:";
+            ws.Cell(row, 7).Style.Font.Bold = true;
+            ws.Cell(row, 8).Value = $"Diurnas: ₡ {report.DayOvertimeAmount:N2} | Nocturnas: ₡ {report.NightOvertimeAmount:N2}  ==>  TOTAL: ₡ {report.TotalOvertimeAmount:N2}";
+            ws.Cell(row, 8).Style.Font.Bold = true;
+            ws.Cell(row, 8).Style.Font.FontColor = colorVerde;
+            ws.Range(row, 8, row, 13).Merge();
+
+            ws.Columns().AdjustToContents();
+
+            using var stream = new MemoryStream();
+            workbook.SaveAs(stream);
+            return stream.ToArray();
+        }
+
+        // 4. NUEVO: GENERADOR DEL EXCEL CONSOLIDADO DE NÓMINA PARA RECURSOS HUMANOS
+        public async Task<byte[]> GenerateHrPayrollExcelAsync(int year, int month, int quincena)
+        {
+            var employees = await _context.Employees
+                .Where(e => e.IsActive)
+                .OrderBy(e => e.FullName)
+                .ToListAsync();
+
+            using var workbook = new XLWorkbook();
+            var ws = workbook.Worksheets.Add("Nomina_RRHH");
+
+            // Título
+            ws.Cell("A1").Value = "HOJA CONSOLIDADA DE NÓMINA - RECURSOS HUMANOS";
+            ws.Cell("A1").Style.Font.Bold = true;
+            ws.Cell("A1").Style.Font.FontSize = 14;
+            ws.Range("A1:I1").Merge();
+
+            string periodStr = (quincena == 1 ? "1RA QUINCENA (CORTE AL 14)" : "2DA QUINCENA (CORTE PENÚLTIMO DÍA)") + $" - {new DateTime(year, month, 1):MMMM yyyy}".ToUpper();
+            ws.Cell("A2").Value = $"Periodo: {periodStr} | Moneda: Colones costarricenses (₡)";
+            ws.Cell("A2").Style.Font.Bold = true;
+            ws.Range("A2:I2").Merge();
+
+            string[] headers = {
+                "Cédula", "Nombre del Colaborador", "Minutos Deducción", "Monto Deducciones (₡)",
+                "Minutos Extras Diurnas", "Monto Extras Diurnas (₡)", "Minutos Extras Nocturnas",
+                "Monto Extras Nocturnas (₡)", "Monto Total Extras (₡)"
+            };
+
+            for (int i = 0; i < headers.Length; i++)
+            {
+                var cell = ws.Cell(4, i + 1);
+                cell.Value = headers[i];
+                cell.Style.Font.Bold = true;
+                cell.Style.Fill.BackgroundColor = XLColor.FromHtml("#0D6EFD");
+                cell.Style.Font.FontColor = XLColor.White;
+                cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+            }
+
+            int row = 5;
+            foreach (var emp in employees)
+            {
+                var report = await GetBiweeklyReportAsync(emp.Id, year, month, quincena);
+                if (report == null) continue;
+
+                ws.Cell(row, 1).Value = string.IsNullOrWhiteSpace(emp.Identification) ? emp.CardCode : emp.Identification;
+                ws.Cell(row, 2).Value = emp.FullName;
+
+                // Deducciones
+                ws.Cell(row, 3).Value = report.GrandTotalExcessMinutes;
+                ws.Cell(row, 4).Value = report.DeductionAmount;
+                ws.Cell(row, 4).Style.NumberFormat.Format = "₡ #,##0.00";
+                if (report.DeductionAmount > 0)
                 {
-                    ws.Cell(row, 8).Style.Font.FontColor = colorRojo;
-                    ws.Cell(row, 8).Style.Font.Bold = true;
+                    ws.Cell(row, 4).Style.Font.FontColor = XLColor.Red;
+                    ws.Cell(row, 4).Style.Font.Bold = true;
                 }
 
-                // Col 9: Total Descuento del día (EN ROJO DESTACADO)
-                ws.Cell(row, 9).Value = d.ExcessMinutes;
-                if (d.ExcessMinutes > 0)
+                // Extras Diurnas
+                ws.Cell(row, 5).Value = report.TotalDayOvertimeMinutes;
+                ws.Cell(row, 6).Value = report.DayOvertimeAmount;
+                ws.Cell(row, 6).Style.NumberFormat.Format = "₡ #,##0.00";
+
+                // Extras Nocturnas
+                ws.Cell(row, 7).Value = report.TotalNightOvertimeMinutes;
+                ws.Cell(row, 8).Value = report.NightOvertimeAmount;
+                ws.Cell(row, 8).Style.NumberFormat.Format = "₡ #,##0.00";
+
+                // Total Extras
+                ws.Cell(row, 9).Value = report.TotalOvertimeAmount;
+                ws.Cell(row, 9).Style.NumberFormat.Format = "₡ #,##0.00";
+                if (report.TotalOvertimeAmount > 0)
                 {
-                    ws.Cell(row, 9).Style.Font.FontColor = colorRojo;
+                    ws.Cell(row, 9).Style.Font.FontColor = XLColor.FromHtml("#198754");
                     ws.Cell(row, 9).Style.Font.Bold = true;
                 }
-
-                // Col 10: Extras Ordinarias (EN VERDE)
-                ws.Cell(row, 10).Value = d.RegularOvertimeMinutes;
-                if (d.RegularOvertimeMinutes > 0)
-                {
-                    ws.Cell(row, 10).Style.Font.FontColor = colorVerde;
-                    ws.Cell(row, 10).Style.Font.Bold = true;
-                }
-
-                // Col 11: Extras Domingos / Feriados (EN AZUL)
-                ws.Cell(row, 11).Value = d.HolidayOvertimeMinutes;
-                if (d.HolidayOvertimeMinutes > 0)
-                {
-                    ws.Cell(row, 11).Style.Font.FontColor = colorAzul;
-                    ws.Cell(row, 11).Style.Font.Bold = true;
-                }
-
-                // Col 12: Horas Efectivas
-                ws.Cell(row, 12).Value = d.EffectiveHours;
-
-                // Alineación centrada para toda la fila
-                ws.Range(row, 1, row, 12).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
                 row++;
             }
 
-            // Bordes para toda la tabla de datos
-            ws.Range(4, 1, row - 1, 12).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
-            ws.Range(4, 1, row - 1, 12).Style.Border.InsideBorder = XLBorderStyleValues.Thin;
-
-            // Bloque inferior de Totales
-            row++;
-            ws.Cell(row, 1).Value = "DESGLOSE DEDUCCIONES:";
-            ws.Cell(row, 1).Style.Font.Bold = true;
-            ws.Cell(row, 2).Value = $"Tardanzas: {report.TotalLateMinutes}m | Salidas anticipadas: {report.TotalEarlyDepartureMinutes}m | Café excedido: {report.TotalExcessCoffeeMinutes}m | Almuerzo excedido: {report.TotalExcessLunchMinutes}m | Diligencias: {report.TotalPersonalErrandMinutes}m";
-            ws.Range(row, 2, row, 12).Merge();
-
-            row++;
-            ws.Cell(row, 1).Value = "TOTAL A DEDUCIR EN NÓMINA:";
-            ws.Cell(row, 1).Style.Font.Bold = true;
-            ws.Cell(row, 2).Value = report.FormattedTotalExcess;
+            // Fila de Totales Generales de la Empresa
+            ws.Cell(row, 2).Value = "TOTALES DE LA EMPRESA:";
             ws.Cell(row, 2).Style.Font.Bold = true;
-            ws.Cell(row, 2).Style.Font.FontColor = colorRojo;
-            ws.Range(row, 2, row, 5).Merge();
+            ws.Cell(row, 4).FormulaA1 = $"=SUM(D5:D{row - 1})";
+            ws.Cell(row, 4).Style.Font.Bold = true;
+            ws.Cell(row, 4).Style.Font.FontColor = XLColor.Red;
+            ws.Cell(row, 4).Style.NumberFormat.Format = "₡ #,##0.00";
 
-            ws.Cell(row, 6).Value = "RESUMEN EXTRAS:";
+            ws.Cell(row, 6).FormulaA1 = $"=SUM(F5:F{row - 1})";
             ws.Cell(row, 6).Style.Font.Bold = true;
-            ws.Cell(row, 7).Value = $"Ordinarias (A pagar en nómina): {report.FormattedRegularOvertime} | Dom/Feriados (Pagado en fecha): {report.FormattedHolidayOvertime}";
-            ws.Range(row, 7, row, 12).Merge();
+            ws.Cell(row, 6).Style.NumberFormat.Format = "₡ #,##0.00";
 
-            row++;
-            ws.Cell(row, 6).Value = "TOTAL EXTRAS A PAGAR EN NÓMINA:";
-            ws.Cell(row, 6).Style.Font.Bold = true;
-            ws.Cell(row, 7).Value = report.FormattedTotalOvertime;
-            ws.Cell(row, 7).Style.Font.Bold = true;
-            ws.Cell(row, 7).Style.Font.FontColor = colorVerde;
-            ws.Range(row, 7, row, 12).Merge();
+            ws.Cell(row, 8).FormulaA1 = $"=SUM(H5:H{row - 1})";
+            ws.Cell(row, 8).Style.Font.Bold = true;
+            ws.Cell(row, 8).Style.NumberFormat.Format = "₡ #,##0.00";
 
-            // Auto-ajustar anchos de columnas
+            ws.Cell(row, 9).FormulaA1 = $"=SUM(I5:I{row - 1})";
+            ws.Cell(row, 9).Style.Font.Bold = true;
+            ws.Cell(row, 9).Style.Font.FontColor = XLColor.FromHtml("#198754");
+            ws.Cell(row, 9).Style.NumberFormat.Format = "₡ #,##0.00";
+
+            ws.Range(4, 1, row, 9).Style.Border.OutsideBorder = XLBorderStyleValues.Thin;
+            ws.Range(4, 1, row, 9).Style.Border.InsideBorder = XLBorderStyleValues.Thin;
+
             ws.Columns().AdjustToContents();
 
             using var stream = new MemoryStream();

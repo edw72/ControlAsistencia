@@ -17,6 +17,8 @@
         public int EmployeeId { get; set; }
         public string FullName { get; set; } = string.Empty;
         public string CardCode { get; set; } = string.Empty;
+        public string Identification { get; set; } = string.Empty;
+        public decimal MonthlySalary { get; set; }
         public string CurrentStatus { get; set; } = "Fuera";
         public string StatusBadgeClass { get; set; } = "bg-secondary";
 
@@ -45,14 +47,16 @@
             + ExcessLunchMinutes
             + PersonalErrandMinutes;
 
-        // HORAS EXTRAS (Generales y Separadas para compatibilidad)
-        public int OvertimeMinutes { get; set; }
-        public int RegularOvertimeMinutes { get; set; }
-        public int HolidayOvertimeMinutes { get; set; }
-        public int TotalOvertimeMinutes => OvertimeMinutes > 0 ? OvertimeMinutes : (RegularOvertimeMinutes + HolidayOvertimeMinutes);
+        // Desglose de Extras
+        public int DayOvertimeMinutes { get; set; }     // Extras Diurnas (antes de 7:00 PM)
+        public int NightOvertimeMinutes { get; set; }   // Extras Nocturnas (después de 7:00 PM)
+        public int RegularOvertimeMinutes => DayOvertimeMinutes + NightOvertimeMinutes;
+        public int HolidayOvertimeMinutes { get; set; } // Domingos y Feriados (100%)
+        public int TotalOvertimeMinutes => RegularOvertimeMinutes + HolidayOvertimeMinutes;
+        public int OvertimeMinutes => TotalOvertimeMinutes;
 
-        public string FormattedOvertime => OvertimeMinutes > 0
-            ? $"{(OvertimeMinutes / 60)}h {(OvertimeMinutes % 60)}m" : "0m";
+        public string FormattedOvertime => TotalOvertimeMinutes > 0
+            ? $"{(TotalOvertimeMinutes / 60)}h {(TotalOvertimeMinutes % 60)}m" : "0m";
 
         public string FormattedRegularOvertime => RegularOvertimeMinutes > 0
             ? $"{(RegularOvertimeMinutes / 60)}h {(RegularOvertimeMinutes % 60)}m" : "0m";
@@ -61,7 +65,6 @@
             ? $"{(HolidayOvertimeMinutes / 60)}h {(HolidayOvertimeMinutes % 60)}m" : "0m";
 
         public string NetWorkingHours { get; set; } = "0h 0m";
-
         public string? TodayIncidentCategory { get; set; }
         public string? TodayIncidentDetail { get; set; }
     }
@@ -71,6 +74,8 @@
         public int EmployeeId { get; set; }
         public string FullName { get; set; } = string.Empty;
         public string CardCode { get; set; } = string.Empty;
+        public string Identification { get; set; } = string.Empty;
+        public decimal MonthlySalary { get; set; }
         public DateTime StartDate { get; set; }
         public DateTime EndDate { get; set; }
         public string PeriodTitle { get; set; } = string.Empty;
@@ -80,6 +85,7 @@
 
         public List<DailyReportRow> Days { get; set; } = new();
 
+        // Minutos de Deducción
         public int TotalLateMinutes { get; set; }
         public int TotalEarlyDepartureMinutes { get; set; }
         public int TotalExcessCoffeeMinutes { get; set; }
@@ -92,20 +98,28 @@
             + TotalExcessLunchMinutes
             + TotalPersonalErrandMinutes;
 
-        public string FormattedTotalExcess => $"{(GrandTotalExcessMinutes / 60)}h {(GrandTotalExcessMinutes % 60)}m ({GrandTotalExcessMinutes} min totales a descontar)";
+        public string FormattedTotalExcess => $"{(GrandTotalExcessMinutes / 60)}h {(GrandTotalExcessMinutes % 60)}m ({GrandTotalExcessMinutes} min)";
 
-        // TOTALES DE HORAS EXTRAS
-        public int TotalRegularOvertimeMinutes { get; set; }
+        // Minutos de Extras
+        public int TotalDayOvertimeMinutes { get; set; }   // Extras Diurnas
+        public int TotalNightOvertimeMinutes { get; set; } // Extras Nocturnas
+        public int TotalRegularOvertimeMinutes => TotalDayOvertimeMinutes + TotalNightOvertimeMinutes;
         public int TotalHolidayOvertimeMinutes { get; set; }
-
-        // REGLA: El gran total a pagar en nómina toma ÚNICAMENTE las horas ordinarias
-        // (los feriados y domingos se liquidan y pagan el mismo día)
-        public int GrandTotalOvertimeMinutes => TotalRegularOvertimeMinutes;
+        public int GrandTotalOvertimeMinutes => TotalRegularOvertimeMinutes; // A pagar en nómina ordinaria
 
         public string FormattedRegularOvertime => $"{(TotalRegularOvertimeMinutes / 60)}h {(TotalRegularOvertimeMinutes % 60)}m ({TotalRegularOvertimeMinutes} min)";
         public string FormattedHolidayOvertime => $"{(TotalHolidayOvertimeMinutes / 60)}h {(TotalHolidayOvertimeMinutes % 60)}m ({TotalHolidayOvertimeMinutes} min)";
         public string FormattedTotalOvertime => $"{(GrandTotalOvertimeMinutes / 60)}h {(GrandTotalOvertimeMinutes % 60)}m ({GrandTotalOvertimeMinutes} min a pagar en nómina)";
 
+        // CÁLCULOS MONETARIOS (EN COLONES - COSTA RICA)
+        public decimal DailyWage => MonthlySalary > 0 ? (MonthlySalary / 30m) : 0m;
+        public decimal DayHourlyRate => DailyWage > 0 ? (DailyWage / 8m) : 0m;
+        public decimal NightHourlyRate => DailyWage > 0 ? (DailyWage / 6m) : 0m;
+
+        public decimal DeductionAmount => Math.Round(GrandTotalExcessMinutes * (DayHourlyRate / 60m), 2);
+        public decimal DayOvertimeAmount => Math.Round(TotalDayOvertimeMinutes * ((DayHourlyRate * 1.5m) / 60m), 2);
+        public decimal NightOvertimeAmount => Math.Round(TotalNightOvertimeMinutes * ((NightHourlyRate * 1.5m) / 60m), 2);
+        public decimal TotalOvertimeAmount => DayOvertimeAmount + NightOvertimeAmount;
     }
 
     public class DailyReportRow
@@ -121,12 +135,27 @@
         public int PersonalErrandMinutes { get; set; }
         public int ExcessMinutes { get; set; }
 
-        // Horas extras compatibles
-        public int OvertimeMinutes { get; set; }
-        public int RegularOvertimeMinutes { get; set; }
+        public int DayOvertimeMinutes { get; set; }
+        public int NightOvertimeMinutes { get; set; }
+        public int RegularOvertimeMinutes => DayOvertimeMinutes + NightOvertimeMinutes;
+        public int OvertimeMinutes => RegularOvertimeMinutes;
         public int HolidayOvertimeMinutes { get; set; }
 
         public bool IsBirthdayDayOff { get; set; }
         public string EffectiveHours { get; set; } = "0h 0m";
+    }
+
+    // DTO para la sábana consolidada de Recursos Humanos
+    public class HrPayrollRowDto
+    {
+        public string Identification { get; set; } = string.Empty;
+        public string FullName { get; set; } = string.Empty;
+        public int DeductionMinutes { get; set; }
+        public decimal DeductionAmount { get; set; }
+        public int DayOvertimeMinutes { get; set; }
+        public decimal DayOvertimeAmount { get; set; }
+        public int NightOvertimeMinutes { get; set; }
+        public decimal NightOvertimeAmount { get; set; }
+        public decimal TotalOvertimeAmount => DayOvertimeAmount + NightOvertimeAmount;
     }
 }
