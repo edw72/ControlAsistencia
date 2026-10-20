@@ -107,19 +107,6 @@
 
     <!-- ESTADO 2: SELECCIÓN DE ACCIÓN -->
     <div id="panelActions" class="card kiosk-card border-0 p-4 d-none">
-        <!-- ESTADO 2.1: ALERTA DE TURNO ANTERIOR SIN SALIDA -->
-        <div id="panelPendingShift" class="card kiosk-card border-0 p-4 d-none text-center border-danger border-2 shadow-lg">
-            <div style="font-size: 3.5rem;">⚠️</div>
-            <h3 id="pendingEmployeeName" class="text-danger fw-bold mb-2">Nombre Empleado</h3>
-            <h4 class="fw-bold text-dark mb-3">Turno Anterior Sin Cerrar</h4>
-            <div class="alert alert-danger text-start p-3 rounded-3 mb-3">
-                <p class="mb-1 fw-semibold">No registraste tu salida del turno anterior (<span id="pendingDateText"></span>).</p>
-                <p class="mb-0 small text-muted">Por políticas de la empresa, debes presentarte con el <strong>Supervisor / Administrador</strong> para justificar tu salida de ayer y autorizar tu entrada de hoy.</p>
-            </div>
-            <button type="button" class="btn btn-secondary rounded-pill px-4" onclick="resetToIdle()">
-                Entendido (<span id="pendingCountdown">8</span>s)
-            </button>
-        </div>
         <h3 id="employeeName" class="text-primary fw-bold mb-1">Nombre Empleado</h3>
         <p id="lastStatusText" class="text-muted mb-4 small">Última marca: Ninguna</p>
 
@@ -130,6 +117,19 @@
                 Cancelar (<span id="countdown">10</span>s)
             </button>
         </div>
+    </div>
+    <!-- ESTADO 2.1: ALERTA DE TURNO ANTERIOR SIN SALIDA -->
+    <div id="panelPendingShift" class="card kiosk-card border-0 p-4 d-none text-center border-danger border-2 shadow-lg" style="display: none;">
+        <div style="font-size: 3.5rem;">⚠️</div>
+        <h3 id="pendingEmployeeName" class="text-danger fw-bold mb-2">Nombre Empleado</h3>
+        <h4 class="fw-bold text-dark mb-3">Turno Anterior Sin Cerrar</h4>
+        <div class="alert alert-danger text-start p-3 rounded-3 mb-3">
+            <p class="mb-1 fw-semibold">No registraste tu salida del turno anterior (<span id="pendingDateText"></span>).</p>
+            <p class="mb-0 small text-muted">Por políticas de la empresa, debes presentarte con el <strong>Supervisor / Administrador</strong> para justificar tu salida de ayer y autorizar tu entrada de hoy.</p>
+        </div>
+        <button type="button" class="btn btn-secondary rounded-pill px-4" onpointerdown="resetToIdle()" onclick="resetToIdle()">
+            Entendido (<span id="pendingCountdown">8</span>s)
+        </button>
     </div>
 
     <!-- ESTADO 3: CONFIRMACIÓN Y ALERTA -->
@@ -320,18 +320,24 @@
         currentEmployeeId = emp.employeeId;
 
         // VERIFICAR SI TIENE UN TURNO ANTERIOR SIN CERRAR
-        if (emp.hasPendingPreviousShift) {
-            soundWarning();
-            document.getElementById('pendingEmployeeName').textContent = emp.fullName;
-            document.getElementById('pendingDateText').textContent = emp.pendingShiftDateText;
+            if (emp.hasPendingPreviousShift) {
+                soundWarning();
+                document.getElementById('pendingEmployeeName').textContent = emp.fullName;
+                document.getElementById('pendingDateText').textContent = emp.pendingShiftDateText;
 
-            document.getElementById('panelInput').classList.add('d-none');
-            document.getElementById('panelActions').classList.add('d-none');
-            document.getElementById('panelPendingShift').classList.remove('d-none');
+                document.getElementById('panelInput').style.display = 'none';
+                document.getElementById('panelInput').classList.add('d-none');
 
-            startPendingCountdown(8);
-            return;
-        }
+                document.getElementById('panelActions').style.display = 'none';
+                document.getElementById('panelActions').classList.add('d-none');
+
+                const pShift = document.getElementById('panelPendingShift');
+                pShift.classList.remove('d-none');
+                pShift.style.display = 'block'; // <-- Forzar visualización limpia
+
+                startPendingCountdown(8);
+                return;
+            }
 
         document.getElementById('employeeName').textContent = emp.fullName;
 
@@ -432,43 +438,86 @@
     }
 
         function resetToIdle() {
-            clearInterval(countdownTimer);
+        try {
+            // 1. Detener cualquier temporizador activo
+            if (typeof countdownTimer !== 'undefined' && countdownTimer) {
+                clearInterval(countdownTimer);
+                countdownTimer = null;
+            }
             currentEmployeeId = 0;
-            clearInput();
-            showError('');
 
-            document.getElementById('panelActions').classList.add('d-none');
-            document.getElementById('panelPendingShift').classList.add('d-none');
-            document.getElementById('panelSuccess').classList.add('d-none');
-            document.getElementById('panelInput').classList.remove('d-none');
-            input.focus();
+            // 2. Limpiar la casilla del PIN
+            const codeInput = document.getElementById('inputCode');
+            if (codeInput) {
+                codeInput.value = '';
+                try { codeInput.focus(); } catch (_) {}
+            }
+
+            // 3. Limpiar errores
+            const errorDiv = document.getElementById('errorMessage');
+            if (errorDiv) {
+                errorDiv.textContent = '';
+                errorDiv.classList.add('d-none');
+                errorDiv.style.display = 'none';
+            }
+
+            // 4. Ocultar Panel de Acciones (Botones de Entrada/Salida)
+            const pActions = document.getElementById('panelActions');
+            if (pActions) {
+                pActions.classList.add('d-none');
+                pActions.style.display = 'none';
+            }
+
+            // 5. Ocultar Panel de Turno Pendiente (Cartel Rojo)
+            const pPending = document.getElementById('panelPendingShift');
+            if (pPending) {
+                pPending.classList.add('d-none');
+                pPending.style.display = 'none';
+            }
+
+            // 6. Ocultar Panel de Éxito / Confirmación
+            const pSuccess = document.getElementById('panelSuccess');
+            if (pSuccess) {
+                pSuccess.classList.add('d-none');
+                pSuccess.style.display = 'none';
+            }
+
+            // 7. Mostrar ÚNICAMENTE el Teclado Numérico
+            const pInput = document.getElementById('panelInput');
+            if (pInput) {
+                pInput.classList.remove('d-none');
+                pInput.style.display = 'block';
+            }
+        } catch (err) {
+            console.error("Error al reiniciar a reposo:", err);
+            // Si ocurriera algún imprevisto, recarga limpia
+            location.reload();
         }
+    }
 
-        function startPendingCountdown(seconds) {
-            clearInterval(countdownTimer);
+    function startPendingCountdown(seconds) {
+        try {
+            if (typeof countdownTimer !== 'undefined' && countdownTimer) {
+                clearInterval(countdownTimer);
+            }
             let timeLeft = seconds;
             const span = document.getElementById('pendingCountdown');
-            span.textContent = timeLeft;
+            if (span) span.textContent = timeLeft;
 
             countdownTimer = setInterval(() => {
                 timeLeft--;
-                span.textContent = timeLeft;
+                const countSpan = document.getElementById('pendingCountdown');
+                if (countSpan) countSpan.textContent = timeLeft;
                 if (timeLeft <= 0) {
+                    clearInterval(countdownTimer);
+                    countdownTimer = null;
                     resetToIdle();
                 }
             }, 1000);
+        } catch (err) {
+            console.error("Error en temporizador pendiente:", err);
+            setTimeout(resetToIdle, seconds * 1000);
         }
-
-    function resetToIdle() {
-        clearInterval(countdownTimer);
-        currentEmployeeId = 0;
-        clearInput();
-        showError('');
-
-        document.getElementById('panelActions').classList.add('d-none');
-        document.getElementById('panelSuccess').classList.add('d-none');
-        document.getElementById('panelInput').classList.remove('d-none');
-        input.focus();
     }
 
     function startCountdown(seconds) {
