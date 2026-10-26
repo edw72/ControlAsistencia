@@ -145,7 +145,7 @@
         public string EffectiveHours { get; set; } = "0h 0m";
     }
 
-    // DTO para la sábana consolidada de Recursos Humanos
+    // DTO para la hoja consolidada de Recursos Humanos
     public class HrPayrollRowDto
     {
         public string Identification { get; set; } = string.Empty;

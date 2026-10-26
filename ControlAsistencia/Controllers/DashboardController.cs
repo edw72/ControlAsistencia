@@ -162,6 +162,25 @@ namespace ControlAsistencia.Controllers
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 fileName);
         }
+
+        // ACCIÓN PARA DISPARAR LA SINCRONIZACIÓN MANUAL CON AWS RDS
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> TriggerAwsSync([FromServices] MySqlSyncService syncService)
+        {
+            var result = await syncService.SyncToAwsAsync();
+
+            if (result.Success)
+            {
+                TempData["SuccessMessage"] = result.Message;
+            }
+            else
+            {
+                TempData["ErrorMessage"] = result.Message;
+            }
+
+            return RedirectToAction(nameof(Index));
+        }
     }
 
 }

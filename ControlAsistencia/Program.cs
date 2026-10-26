@@ -1,5 +1,6 @@
 using ControlAsistencia.Data;
 using ControlAsistencia.Services;
+using ControlAsistencia.Web.Services;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.EntityFrameworkCore;
 
@@ -23,7 +24,9 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 
 builder.Services.AddScoped<AttendanceService>();
 builder.Services.AddScoped<EmailService>();
+builder.Services.AddScoped<MySqlSyncService>(); // <-- REGISTRAR SERVICIO DE SYNC
 builder.Services.AddHostedService<DailyBackupService>();
+builder.Services.AddHostedService<NightlySyncService>();  // Sincronización AWS 11:30 PM
 
 builder.Services.AddAuthentication(CookieAuthenticationDefaults.AuthenticationScheme)
     .AddCookie(options =>

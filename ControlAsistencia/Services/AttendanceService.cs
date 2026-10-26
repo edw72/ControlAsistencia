@@ -30,7 +30,7 @@ namespace ControlAsistencia.Services
 
         public const int MaxCoffeeMinutes = 15;
         public const int MaxLunchMinutes = 45;
-        public const int EarlyArrivalGraceMinutes = 10;
+        public const int EarlyArrivalGraceMinutes = 15;
 
         public AttendanceService(AppDbContext context)
         {

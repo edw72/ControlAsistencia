@@ -53,6 +53,12 @@
                        value="@Model.SelectedDate.ToString("yyyy-MM-dd")" onchange="this.form.submit()" />
             </form>
             <a href="/Kiosk" target="_blank" class="btn btn-outline-primary btn-sm fw-semibold">🖥 Kiosco</a>
+            <form asp-action="TriggerAwsSync" method="post" class="d-inline"
+                  onsubmit="return confirm('¿Iniciar sincronización de la base de datos local hacia AWS RDS ahora?');">
+                <button type="submit" class="btn btn-outline-primary btn-sm fw-bold">
+                    ☁️ Sincronizar AWS
+                </button>
+            </form>
             <form asp-action="TriggerManualBackup" method="post" class="d-inline"
                   onsubmit="return confirm('¿Generar un respaldo inmediato de la base de datos y enviarlo a tu correo?');">
                 <button type="submit" class="btn btn-outline-dark btn-sm fw-bold">
