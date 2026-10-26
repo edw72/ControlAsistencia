@@ -1,0 +1,421 @@
+﻿@{
+    Layout = null; // Pantalla limpia optimizada para teléfonos móviles
+}
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>Mi Tiempo de Descanso</title>
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <style>
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+            color: #f8fafc;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+            font-family: system-ui, -apple-system, sans-serif;
+        }
+
+        .mobile-card {
+            background: rgba(30, 41, 59, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            border-radius: 24px;
+            padding: 1.8rem;
+            width: 100%;
+            max-width: 420px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.4);
+        }
+
+        .timer-display {
+            font-size: 3.2rem;
+            font-weight: 800;
+            font-family: 'Courier New', Courier, monospace;
+            letter-spacing: 2px;
+        }
+
+        .warning-card {
+            border: 2px solid #f59e0b !important;
+            background: rgba(245, 158, 11, 0.18) !important;
+            animation: pulse-border 2s infinite;
+        }
+
+        .danger-card {
+            border: 2px solid #ef4444 !important;
+            background: rgba(239, 68, 68, 0.22) !important;
+        }
+
+        @@keyframes pulse-border {
+            0% {
+                box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.5);
+            }
+
+            70% {
+                box-shadow: 0 0 0 12px rgba(245, 158, 11, 0);
+            }
+
+            100% {
+                box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <!-- VISTA 1: INGRESO DE CÓDIGO (Solo la primera vez) -->
+    <div id="panelLogin" class="mobile-card text-center">
+        <img src="~/images/logo.png" alt="Logo" style="height: 60px; object-fit: contain;" class="mb-3" />
+        <h4 class="fw-bold mb-1">Mi Tiempo de Descanso</h4>
+        <p class="text-light opacity-75 small mb-4">Consulta el tiempo de tu café o almuerzo en vivo</p>
+
+        <form id="loginForm" onsubmit="event.preventDefault(); submitCode();">
+            <div class="mb-3">
+                <input type="text" id="inputCode" class="form-control form-control-lg text-center fw-bold fs-3"
+                       placeholder="Ingresa tu ID / Carné" autocomplete="off" required />
+            </div>
+
+            <div class="form-check text-start mb-4">
+                <input class="form-check-input" type="checkbox" id="chkRemember" checked>
+                <label class="form-check-label text-light opacity-75 small" for="chkRemember">
+                    Recordar en este teléfono
+                </label>
+            </div>
+
+            <button type="submit" class="btn btn-primary btn-lg w-100 fw-bold rounded-pill">
+                Consultar Mi Tiempo
+            </button>
+        </form>
+
+        <div id="errorMsg" class="alert alert-danger mt-3 d-none small"></div>
+    </div>
+
+    <!-- VISTA 2: CRONÓMETRO PERSONAL EN VIVO -->
+    <div id="panelTimer" class="mobile-card text-center d-none">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <img src="~/images/logo.png" alt="Logo" style="height: 35px; object-fit: contain;" />
+            <button type="button" class="btn btn-outline-light btn-sm rounded-pill px-3" onclick="logoutMobile()">
+                Cambiar ID
+            </button>
+        </div>
+
+        <h4 id="empName" class="fw-bold text-truncate mb-1">Nombre Colaborador</h4>
+        <small class="text-light opacity-75 d-block mb-3">ID: <span id="empCode"></span></small>
+
+        <!-- CASO A: ESTÁ EN DESCANSO -->
+        <div id="boxActiveBreak" class="d-none">
+            <span id="badgeBreakType" class="badge bg-warning text-dark px-3 py-2 fs-6 mb-2">☕ Café</span>
+            <small class="text-muted d-block mb-2">Inició: <span id="lblStartTime">--:--</span></small>
+
+            <div class="my-3">
+                <small id="lblStatusTitle" class="text-info fw-bold d-block text-uppercase">Tiempo Restante</small>
+                <div id="lblTimer" class="timer-display text-info">00:00</div>
+            </div>
+
+            <div class="progress bg-dark mb-3" style="height: 8px;">
+                <div id="barProgress" class="progress-bar bg-info" style="width: 0%;"></div>
+            </div>
+
+            <div id="alertBoxWarning" class="alert alert-warning py-2 small fw-bold d-none">
+                ⚠️ ¡Últimos 5 minutos! Prepárate para regresar.
+            </div>
+            <div id="alertBoxDanger" class="alert alert-danger py-2 small fw-bold d-none">
+                🚨 Tiempo límite de descanso excedido.
+            </div>
+        </div>
+
+        <!-- CASO B: NO ESTÁ EN DESCANSO -->
+        <div id="boxNoBreak" class="py-4 d-none">
+            <div style="font-size: 3rem;">🛠️</div>
+            <h5 id="lblGeneralStatus" class="fw-bold mt-2 text-info">Laborando</h5>
+            <p class="text-light opacity-75 small">Cuando marques café o almuerzo en la tablet, tu cronómetro aparecerá aquí automáticamente.</p>
+        </div>
+
+        <button type="button" class="btn btn-outline-info btn-sm rounded-pill mt-3 w-100" onclick="checkServerStatus()">
+            🔄 Actualizar Estado
+        </button>
+    </div>
+
+    <!-- JAVASCRIPT CON PANTALLA SIEMPRE ACTIVA (WAKE LOCK) Y ALARMAS -->
+    <script>
+        let currentCode = '';
+        let currentData = null;
+        let tickInterval = null;
+        let hasVibrated5Min = false;
+        let hasAlarmedLastMinute = false;
+        let wakeLock = null; // Mantiene la pantalla encendida
+
+        // 1. MOTOR DE PANTALLA ACTIVA (Evita que el celular se apague durante el descanso)
+        async function requestScreenWakeLock() {
+            try {
+                if ('wakeLock' in navigator && !wakeLock) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                }
+            } catch (err) {
+                console.warn("WakeLock no disponible o bloqueado por el navegador:", err);
+            }
+        }
+
+        function releaseScreenWakeLock() {
+            if (wakeLock) {
+                wakeLock.release().then(() => {
+                    wakeLock = null;
+                }).catch(() => {});
+            }
+        }
+
+        // Si el usuario cambia de app o vuelve a encender la pantalla, reenganchar y sincronizar
+        document.addEventListener('visibilitychange', async () => {
+            if (document.visibilityState === 'visible') {
+                if (currentData && currentData.isOnBreak) {
+                    await requestScreenWakeLock();
+                    checkServerStatus(); // Sincroniza al milisegundo con la hora real
+                }
+            } else {
+                releaseScreenWakeLock();
+            }
+        });
+
+        // 2. MOTOR DE AUDIO
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        let audioCtx = null;
+
+        function getAudioContext() {
+            if (!audioCtx) audioCtx = new AudioContext();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+            return audioCtx;
+        }
+
+        function playTone(freq, duration, delay, gainLevel) {
+            setTimeout(() => {
+                try {
+                    const ctx = getAudioContext();
+                    const osc = ctx.createOscillator();
+                    const gain = ctx.createGain();
+                    osc.type = 'sine';
+                    osc.frequency.value = freq;
+                    gain.gain.setValueAtTime(gainLevel, ctx.currentTime);
+                    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + duration);
+                    osc.connect(gain);
+                    gain.connect(ctx.destination);
+                    osc.start();
+                    osc.stop(ctx.currentTime + duration);
+                } catch (e) {}
+            }, delay);
+        }
+
+        function playChime5Min() {
+            playTone(659.25, 0.4, 0, 0.2);
+            playTone(783.99, 0.5, 200, 0.25);
+        }
+
+        function playAlarmLastMinute() {
+            playTone(880, 0.15, 0, 0.35);
+            playTone(880, 0.15, 180, 0.35);
+            playTone(880, 0.30, 360, 0.4);
+        }
+
+        // 3. INICIO
+        window.addEventListener('DOMContentLoaded', () => {
+            const savedCode = localStorage.getItem('mi_tiempo_codigo');
+            if (savedCode) {
+                currentCode = savedCode;
+                checkServerStatus();
+            }
+        });
+
+        function submitCode() {
+            const val = document.getElementById('inputCode').value.trim();
+            if (!val) return;
+
+            if (document.getElementById('chkRemember').checked) {
+                localStorage.setItem('mi_tiempo_codigo', val);
+            } else {
+                localStorage.removeItem('mi_tiempo_codigo');
+            }
+
+            currentCode = val;
+            checkServerStatus();
+        }
+
+        async function checkServerStatus() {
+            if (!currentCode) return;
+
+            try {
+                const response = await fetch('/MiTiempo/CheckStatus', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ code: currentCode })
+                });
+
+                const result = await response.json();
+
+                if (!result.success) {
+                    showLoginError(result.message);
+                    logoutMobile();
+                    return;
+                }
+
+                currentData = result;
+                renderMobileView();
+            } catch (e) {
+                showLoginError('Error de conexión con la empresa.');
+            }
+        }
+
+        function renderMobileView() {
+            document.getElementById('panelLogin').classList.add('d-none');
+            document.getElementById('panelTimer').classList.remove('d-none');
+
+            document.getElementById('empName').textContent = currentData.fullName;
+            document.getElementById('empCode').textContent = currentData.cardCode;
+
+            if (currentData.isOnBreak) {
+                document.getElementById('boxNoBreak').classList.add('d-none');
+                document.getElementById('boxActiveBreak').classList.remove('d-none');
+
+                const badge = document.getElementById('badgeBreakType');
+                badge.textContent = `${currentData.breakType === 'Café' ? '☕ Café' : '🍲 Almuerzo'} (${currentData.allowedMinutes}m)`;
+                badge.className = `badge ${currentData.breakType === 'Café' ? 'bg-warning text-dark' : 'bg-primary'} px-3 py-2 fs-6 mb-2`;
+
+                document.getElementById('lblStartTime').textContent = currentData.startTimeLocal;
+
+                // ACTIVAR PANTALLA SIEMPRE ENCENDIDA MIENTRAS DURE EL DESCANSO
+                requestScreenWakeLock();
+
+                if (!tickInterval) {
+                    tickInterval = setInterval(updateTick, 1000);
+                }
+                updateTick();
+            } else {
+                // Si ya no está en descanso, liberar la pantalla para que duerma normal
+                releaseScreenWakeLock();
+
+                document.getElementById('boxActiveBreak').classList.add('d-none');
+                document.getElementById('boxNoBreak').classList.remove('d-none');
+                document.getElementById('lblGeneralStatus').textContent = currentData.currentStatus;
+
+                if (tickInterval) {
+                    clearInterval(tickInterval);
+                    tickInterval = null;
+                }
+            }
+        }
+
+        function updateTick() {
+            if (!currentData || !currentData.isOnBreak) return;
+
+            const totalAllowedSeconds = currentData.allowedMinutes * 60;
+            const remainingSeconds = totalAllowedSeconds - currentData.elapsedSeconds;
+
+            const absSeconds = Math.abs(remainingSeconds);
+            const mins = Math.floor(absSeconds / 60);
+            const secs = absSeconds % 60;
+            const formatted = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+
+            const card = document.getElementById('panelTimer');
+            const lblTimer = document.getElementById('lblTimer');
+            const lblTitle = document.getElementById('lblStatusTitle');
+            const bar = document.getElementById('barProgress');
+            const warnBox = document.getElementById('alertBoxWarning');
+            const dangerBox = document.getElementById('alertBoxDanger');
+
+            lblTimer.textContent = `${remainingSeconds < 0 ? '-' : ''}${formatted}`;
+            const percent = Math.min(100, Math.floor((currentData.elapsedSeconds / totalAllowedSeconds) * 100));
+            bar.style.width = `${percent}%`;
+
+            // CASO 1: ¡ÚLTIMO MINUTO! (<= 60s y > 0s)
+            if (remainingSeconds <= 60 && remainingSeconds > 0) {
+                card.className = 'mobile-card text-center danger-card';
+                lblTimer.className = 'timer-display text-danger fw-bold';
+                lblTitle.className = 'text-danger fw-bold d-block text-uppercase';
+                lblTitle.textContent = '🚨 ¡ÚLTIMO MINUTO!';
+                bar.className = 'progress-bar bg-danger';
+
+                warnBox.classList.remove('d-none');
+                warnBox.className = 'alert alert-danger py-2 small fw-bold shadow-sm';
+                warnBox.innerHTML = '⚡ <strong>¡ÚLTIMO MINUTO!</strong> Hora de regresar.';
+                dangerBox.classList.add('d-none');
+
+                if (!hasAlarmedLastMinute) {
+                    hasAlarmedLastMinute = true;
+                    if ('vibrate' in navigator) {
+                        navigator.vibrate([800, 200, 800, 200, 1000]);
+                    }
+                    playAlarmLastMinute();
+                }
+            }
+            // CASO 2: AVISO PREVENTIVO DE 5 MINUTOS (<= 300s y > 60s)
+            else if (remainingSeconds <= 300 && remainingSeconds > 60) {
+                card.className = 'mobile-card text-center warning-card';
+                lblTimer.className = 'timer-display text-warning';
+                lblTitle.className = 'text-warning fw-bold d-block text-uppercase';
+                lblTitle.textContent = '⚠️ Tiempo Restante';
+                bar.className = 'progress-bar bg-warning';
+
+                warnBox.classList.remove('d-none');
+                warnBox.className = 'alert alert-warning py-2 small fw-bold';
+                warnBox.textContent = '⚠️ ¡Últimos 5 minutos! Prepárate para regresar.';
+                dangerBox.classList.add('d-none');
+
+                if (!hasVibrated5Min) {
+                    hasVibrated5Min = true;
+                    if ('vibrate' in navigator) navigator.vibrate([400, 200, 400]);
+                    playChime5Min();
+                }
+            }
+            // CASO 3: TIEMPO EXCEDIDO
+            else if (remainingSeconds <= 0) {
+                card.className = 'mobile-card text-center danger-card';
+                lblTimer.className = 'timer-display text-danger';
+                lblTitle.className = 'text-danger fw-bold d-block text-uppercase';
+                lblTitle.textContent = '🚨 Tiempo Excedido';
+                bar.className = 'progress-bar bg-danger';
+
+                warnBox.classList.add('d-none');
+                dangerBox.classList.remove('d-none');
+            }
+            // CASO 4: TIEMPO NORMAL
+            else {
+                card.className = 'mobile-card text-center';
+                lblTimer.className = 'timer-display text-info';
+                lblTitle.className = 'text-info fw-bold d-block text-uppercase';
+                lblTitle.textContent = 'Tiempo Restante';
+                bar.className = 'progress-bar bg-info';
+
+                warnBox.classList.add('d-none');
+                dangerBox.classList.add('d-none');
+
+                hasVibrated5Min = false;
+                hasAlarmedLastMinute = false;
+            }
+
+            currentData.elapsedSeconds++;
+        }
+
+        function logoutMobile() {
+            releaseScreenWakeLock();
+            localStorage.removeItem('mi_tiempo_codigo');
+            currentCode = '';
+            currentData = null;
+            if (tickInterval) clearInterval(tickInterval);
+            document.getElementById('panelTimer').classList.add('d-none');
+            document.getElementById('panelLogin').classList.remove('d-none');
+            document.getElementById('inputCode').value = '';
+        }
+
+        function showLoginError(msg) {
+            const err = document.getElementById('errorMsg');
+            err.textContent = msg;
+            err.classList.remove('d-none');
+            setTimeout(() => { err.classList.add('d-none'); }, 3500);
+        }
+
+        setInterval(checkServerStatus, 5000);
+    </script>
+</body>
+</html>

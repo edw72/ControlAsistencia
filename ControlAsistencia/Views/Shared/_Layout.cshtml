@@ -45,6 +45,13 @@
                             <li class="nav-item">
                                 <a class="nav-link text-dark fw-bold" asp-controller="Holidays" asp-action="Index">🎉 Feriados</a>
                             </li>
+                            <!-- ENLACE VISIBLE SOLO PARA ADMINISTRADORES -->
+                            @if (User.IsInRole("Admin"))
+                            {
+                                <li class="nav-item">
+                                    <a class="nav-link text-dark fw-bold" asp-controller="Users" asp-action="Index">⚙ Usuarios</a>
+                                </li>
+                            }
                         }
                     </ul>
 
